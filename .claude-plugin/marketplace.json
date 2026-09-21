@@ -1,0 +1,32 @@
+{
+  "name": "sunny-skills",
+  "owner": {
+    "name": "Sunny Patel",
+    "url": "https://github.com/Sunnshiine"
+  },
+  "description": "Sunny's personal skills. Modified copies of upstream skill repos, kept in sync with tools/sync.",
+  "plugins": [
+    {
+      "name": "pstack",
+      "source": "./sources/pstack-claude/plugins/pstack",
+      "description": "Modified copy of michael-denyer/pstack-claude, the Claude Code port of poteto's pstack."
+    },
+    {
+      "name": "mattpocock",
+      "source": "./sources/mattpocock",
+      "description": "Modified copies of selected skills from mattpocock/skills.",
+      "strict": false,
+      "license": "MIT",
+      "skills": [
+        "./skills/engineering/improve-codebase-architecture",
+        "./skills/engineering/grill-with-docs",
+        "./skills/engineering/codebase-design",
+        "./skills/engineering/domain-modeling",
+        "./skills/productivity/grilling",
+        "./skills/productivity/writing-for-agents",
+        "./skills/in-progress/pr",
+        "./skills/in-progress/retro"
+      ]
+    }
+  ]
+}
