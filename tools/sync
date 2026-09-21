@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "usage: tools/sync <source> [<ref>] [--no-merge]" >&2
+  exit 2
+}
+
+name=""
+ref_arg=""
+do_merge=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-merge) do_merge=0 ;;
+    -*) usage ;;
+    *)
+      if [ -z "$name" ]; then name="$arg"
+      elif [ -z "$ref_arg" ]; then ref_arg="$arg"
+      else usage
+      fi
+      ;;
+  esac
+done
+[ -n "$name" ] || usage
+
+root=$(git rev-parse --show-toplevel)
+registry="$root/sources.json"
+[ -f "$registry" ] || { echo "no sources.json at $registry" >&2; exit 1; }
+if ! jq -e --arg s "$name" 'has($s)' "$registry" >/dev/null; then
+  { echo "unknown source: $name"; echo "known sources:"; jq -r 'keys[] | "  " + .' "$registry"; } >&2
+  exit 1
+fi
+
+url=$(jq -r --arg s "$name" '.[$s].url' "$registry")
+prefix=$(jq -r --arg s "$name" '.[$s].prefix' "$registry")
+ref=${ref_arg:-$(jq -r --arg s "$name" '.[$s].ref' "$registry")}
+paths=()
+while IFS= read -r p; do paths+=("$p"); done < <(jq -r --arg s "$name" '.[$s].paths[]' "$registry")
+
+if [ "$do_merge" = 1 ] && ! git -C "$root" diff --quiet HEAD --; then
+  echo "working tree has uncommitted changes to tracked files" >&2
+  exit 1
+fi
+
+branch="vendor/$name"
+tmp=$(mktemp -d)
+wt="$tmp/worktree"
+cleanup() {
+  git -C "$root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+  rm -rf "$tmp"
+  git -C "$root" worktree prune >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+git -C "$root" worktree prune
+
+up="$tmp/upstream"
+git clone --quiet --filter=blob:none --no-checkout "$url" "$up"
+sha=$(git -C "$up" rev-parse --verify --quiet "${ref}^{commit}") ||
+  { echo "cannot resolve ref '$ref' in $url" >&2; exit 1; }
+git -C "$up" checkout --quiet --detach "$sha"
+# The checkout has materialized every file, so drop upstream's history before copying.
+rm -rf "$up/.git"
+
+for p in "${paths[@]}"; do
+  [ -e "$up/$p" ] || { echo "path '$p' does not exist in $url@$sha" >&2; exit 1; }
+done
+
+if git -C "$root" show-ref --verify --quiet "refs/heads/$branch"; then
+  git -C "$root" worktree add --quiet "$wt" "$branch"
+elif git -C "$root" remote get-url origin >/dev/null 2>&1 &&
+     git -C "$root" fetch --quiet origin "$branch" >/dev/null 2>&1; then
+  git -C "$root" branch "$branch" FETCH_HEAD
+  git -C "$root" worktree add --quiet "$wt" "$branch"
+else
+  git -C "$root" worktree add --quiet --orphan -b "$branch" "$wt"
+fi
+
+rm -rf "${wt:?}/$prefix"
+mkdir -p "$wt/$prefix"
+for p in "${paths[@]}"; do
+  if [ "$p" = "." ]; then
+    cp -R "$up/." "$wt/$prefix/"
+  else
+    mkdir -p "$wt/$prefix/$(dirname "$p")"
+    cp -R "$up/$p" "$wt/$prefix/$p"
+  fi
+done
+
+git -C "$wt" add -A -- "$prefix"
+if [ -n "$(git -C "$wt" status --porcelain)" ]; then
+  git -C "$wt" commit --quiet -m "vendor($name): $url@$sha"
+  echo "$branch now holds $url@$sha"
+else
+  echo "$branch already holds $url@$sha, nothing to record"
+fi
+
+if git -C "$root" remote get-url origin >/dev/null 2>&1; then
+  echo "pushing $branch to origin"
+  git -C "$root" push --quiet origin "$branch"
+fi
+
+if [ "$do_merge" = 0 ]; then
+  echo "preview incoming changes with: git diff HEAD...$branch"
+  exit 0
+fi
+
+if git -C "$root" merge-base --is-ancestor "$branch" HEAD; then
+  echo "nothing to merge, $branch is already in $(git -C "$root" rev-parse --abbrev-ref HEAD)"
+  exit 0
+fi
+if ! git -C "$root" merge --no-ff --allow-unrelated-histories \
+     -m "sync($name): merge upstream ${sha:0:7}" "$branch"; then
+  echo "conflicts left in place. resolve, git add, git commit, or git merge --abort" >&2
+  exit 1
+fi

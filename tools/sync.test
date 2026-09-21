@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+sync=$(cd "$(dirname "$0")" && pwd)/sync
+base=$(mktemp -d)
+trap 'rm -rf "$base"' EXIT
+
+check() {
+  local msg=$1
+  shift
+  if "$@" >/dev/null 2>&1; then
+    echo "ok: $msg"
+  else
+    echo "FAIL: $msg"
+    exit 1
+  fi
+}
+
+not() { ! "$@"; }
+contains() { case "$2" in *"$1"*) return 0 ;; *) return 1 ;; esac; }
+worktrees() { git -C "$1" worktree list | wc -l | tr -d ' '; }
+commit_in() { git -C "$1" add -A && git -C "$1" commit --quiet -m "$2"; }
+sync_in() { local d=$1; shift; (cd "$d" && "$sync" "$@"); }
+
+new_repo() {
+  git init --quiet -b main "$1"
+  git -C "$1" config user.email sync@example.com
+  git -C "$1" config user.name "sync test"
+  git -C "$1" config commit.gpgsign false
+}
+
+new_upstream() {
+  local d=$1
+  new_repo "$d"
+  git -C "$d" config uploadpack.allowFilter true
+  mkdir -p "$d/skills/a"
+  printf 'top\nmiddle\nbottom\n' >"$d/shared.md"
+  printf 'MIT\n' >"$d/LICENSE"
+  printf 'doomed\n' >"$d/doomed.md"
+  printf 'skill a v1\n' >"$d/skills/a/SKILL.md"
+  commit_in "$d" "upstream v1"
+}
+
+new_consumer() {
+  local d=$1 up=$2
+  new_repo "$d"
+  cat >"$d/sources.json" <<EOF
+{
+  "whole": {"url": "file://$up", "ref": "main", "prefix": "sources/whole", "paths": ["."]},
+  "subset": {"url": "file://$up", "ref": "main", "prefix": "sources/subset", "paths": ["LICENSE", "skills/a"]},
+  "broken": {"url": "file://$up", "ref": "main", "prefix": "sources/broken", "paths": ["skills/nope"]}
+}
+EOF
+  printf '# consumer\n' >"$d/README.md"
+  commit_in "$d" "consumer init"
+}
+
+scenario() {
+  local d="$base/$1"
+  mkdir -p "$d"
+  new_upstream "$d/upstream"
+  new_consumer "$d/consumer" "$d/upstream"
+}
+
+scenario import
+u=$base/import/upstream
+c=$base/import/consumer
+sync_in "$c" whole >/dev/null
+sync_in "$c" subset >/dev/null
+check "whole source lands the upstream root under its prefix" test -f "$c/sources/whole/shared.md"
+check "whole source keeps upstream nesting" test -f "$c/sources/whole/skills/a/SKILL.md"
+check "upstream .git is not vendored" not test -e "$c/sources/whole/.git"
+check "subset source lands only its listed paths" test -f "$c/sources/subset/skills/a/SKILL.md"
+check "subset source omits unlisted upstream files" not test -e "$c/sources/subset/shared.md"
+check "vendor branch is an orphan" test -z "$(git -C "$c" log --format=%P -1 vendor/whole)"
+check "vendor branch holds no consumer files" not git -C "$c" cat-file -e vendor/whole:README.md
+check "main records the sync as a merge" test -n "$(git -C "$c" log --format=%P -1 main | cut -d' ' -f2)"
+check "no leftover worktree registrations after import" test "$(worktrees "$c")" = 1
+
+main_before=$(git -C "$c" rev-parse main)
+vendor_before=$(git -C "$c" rev-parse vendor/whole)
+sync_in "$c" whole >/dev/null
+check "re-running at the same ref adds no commit to main" test "$(git -C "$c" rev-parse main)" = "$main_before"
+check "re-running at the same ref adds no commit to the vendor branch" test "$(git -C "$c" rev-parse vendor/whole)" = "$vendor_before"
+
+scenario evolve
+u=$base/evolve/upstream
+c=$base/evolve/consumer
+sync_in "$c" whole >/dev/null
+printf 'top\nmiddle\nlocally edited bottom\n' >"$c/sources/whole/shared.md"
+printf 'mine\n' >"$c/sources/whole/LOCAL.md"
+commit_in "$c" "local edits"
+printf 'upstream edited top\nmiddle\nbottom\n' >"$u/shared.md"
+rm "$u/doomed.md"
+commit_in "$u" "upstream v2"
+sync_in "$c" whole >/dev/null
+check "local edit survives an upstream update elsewhere in the file" grep -q "locally edited bottom" "$c/sources/whole/shared.md"
+check "upstream change arrives in the same file" grep -q "upstream edited top" "$c/sources/whole/shared.md"
+check "a file deleted upstream disappears locally" not test -e "$c/sources/whole/doomed.md"
+check "a main-only file inside the prefix survives" test -f "$c/sources/whole/LOCAL.md"
+check "no leftover worktree registrations after an update" test "$(worktrees "$c")" = 1
+
+scenario conflict
+u=$base/conflict/upstream
+c=$base/conflict/consumer
+sync_in "$c" whole >/dev/null
+printf 'top\nmine\nbottom\n' >"$c/sources/whole/shared.md"
+commit_in "$c" "conflicting local edit"
+printf 'top\ntheirs\nbottom\n' >"$u/shared.md"
+commit_in "$u" "conflicting upstream edit"
+check "overlapping edits exit nonzero" not sync_in "$c" whole
+check "overlapping edits leave a conflicted merge in place" test -f "$c/.git/MERGE_HEAD"
+check "no leftover worktree registrations after a conflict" test "$(worktrees "$c")" = 1
+
+scenario missing
+c=$base/missing/consumer
+out=$(sync_in "$c" broken 2>&1) && status=0 || status=$?
+check "a paths entry missing upstream exits nonzero" test "$status" -ne 0
+check "a paths entry missing upstream is named in the error" contains "skills/nope" "$out"
+
+scenario pinned
+u=$base/pinned/upstream
+c=$base/pinned/consumer
+first=$(git -C "$u" rev-parse HEAD)
+printf 'skill a v2\n' >"$u/skills/a/SKILL.md"
+commit_in "$u" "upstream v2"
+sync_in "$c" subset "${first:0:8}" >/dev/null
+check "an abbreviated sha pins the snapshot to that commit" grep -q "skill a v1" "$c/sources/subset/skills/a/SKILL.md"
+
+scenario nomerge
+c=$base/nomerge/consumer
+main_before=$(git -C "$c" rev-parse main)
+sync_in "$c" whole --no-merge >/dev/null
+check "--no-merge advances the vendor branch" git -C "$c" rev-parse --verify vendor/whole
+check "--no-merge leaves the current branch untouched" test "$(git -C "$c" rev-parse main)" = "$main_before"
+check "--no-merge leaves the working tree untouched" not test -e "$c/sources/whole"
+check "no leftover worktree registrations after --no-merge" test "$(worktrees "$c")" = 1
+
+echo "all checks passed"
