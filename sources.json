@@ -1,0 +1,24 @@
+{
+  "pstack-claude": {
+    "url": "https://github.com/michael-denyer/pstack-claude",
+    "ref": "main",
+    "prefix": "sources/pstack-claude",
+    "paths": ["."]
+  },
+  "mattpocock": {
+    "url": "https://github.com/mattpocock/skills",
+    "ref": "main",
+    "prefix": "sources/mattpocock",
+    "paths": [
+      "LICENSE",
+      "skills/engineering/improve-codebase-architecture",
+      "skills/engineering/grill-with-docs",
+      "skills/engineering/codebase-design",
+      "skills/engineering/domain-modeling",
+      "skills/productivity/grilling",
+      "skills/productivity/writing-for-agents",
+      "skills/in-progress/pr",
+      "skills/in-progress/retro"
+    ]
+  }
+}
