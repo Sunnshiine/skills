@@ -1,6 +1,6 @@
 # skills
 
-My personal agent skills. Most of them start as copies of other people's skill repos. I edit the copies in place, and `tools/sync` merges upstream updates without losing my edits.
+Skills I enjoy using. `tools/sync` merges upstream updates without losing my edits.
 
 ## Sources
 
@@ -15,11 +15,11 @@ The `mattpocock` skills are `improve-codebase-architecture`, `grill-with-docs`, 
 
 Both upstreams are MIT licensed. Their license and notice files are kept inside each source directory.
 
-## Install
+## Note
 
-Uninstall the original `pstack` and Matt Pocock skills first. Two installed copies of the same skill names collide.
+The original `pstack` and Matt Pocock skills will collide, so delete 'em.
 
-### As Claude Code plugins
+### Plugin Install
 
 Use this path in Claude Code. The `pstack` plugin includes its agents and its session-start hook, which the skills CLI does not install.
 
@@ -29,29 +29,11 @@ Use this path in Claude Code. The `pstack` plugin includes its agents and its se
 /plugin install mattpocock@sstack
 ```
 
-### With the skills CLI
-
-Use this path for other agents, or to install single skills. The [skills CLI](https://github.com/vercel-labs/skills) finds all 62 skills in this repo.
-
-To pick skills and agents from a prompt:
+### Skills CLI Install
 
 ```shell
 npx skills@latest add Sunnshiine/skills
 ```
-
-To list the skills without installing anything:
-
-```shell
-npx skills@latest add Sunnshiine/skills --list
-```
-
-To install named skills for your user account, not for one project:
-
-```shell
-npx skills@latest add Sunnshiine/skills --skill grilling --skill domain-modeling --global
-```
-
-Install a skill together with the skills it calls. `grill-with-docs` calls `grilling` and `domain-modeling`. `improve-codebase-architecture` calls those two and `codebase-design`. `retro` calls `writing-for-agents`.
 
 A skills CLI install of pstack has no hook, so ask for `poteto-mode` by name. See the [pstack reference](sources/pstack-claude/docs/reference.md#shared-skills-installation) for what a skills-only install contains.
 
