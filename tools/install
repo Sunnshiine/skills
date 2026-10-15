@@ -280,7 +280,6 @@ uninstall_plugin() {
   fi
 }
 
-# The absolute, symlink-free path a link points at.
 link_target() {
   local t
   t=$(readlink "$1")
