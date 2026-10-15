@@ -1,0 +1,256 @@
+name: Sync upstream skills
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: skills-sync
+  cancel-in-progress: false
+
+env:
+  LABEL: sync-needs-human
+
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    outputs:
+      names: ${{ steps.list.outputs.names }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Lowest precedence first, matching tools/sync --all, so a customized item renamed away
+      # from a newly contested name merges before the source that claims the name.
+      - id: list
+        run: echo "names=$(jq -c '[.sources[].name] | reverse' sources.json)" >>"$GITHUB_OUTPUT"
+      - name: Ensure the triage label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" --color d93f0b --description "A sync needs a person" --force
+
+  sync:
+    needs: sources
+    runs-on: ubuntu-latest
+    strategy:
+      # One source at a time, each on a fresh main, so a stuck source never blocks the rest.
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        source: ${{ fromJSON(needs.sources.outputs.names) }}
+    env:
+      SOURCE: ${{ matrix.source }}
+      GIT_AUTHOR_NAME: github-actions[bot]
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: github-actions[bot]
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          # The resolver runs in this tree, so no token is stored in .git/config. Steps that push authenticate per step.
+          persist-credentials: false
+
+      - id: sync
+        name: Sync ${{ matrix.source }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          set +e
+          tools/sync "$SOURCE"
+          status=$?
+          set -e
+          echo "status=$status" >>"$GITHUB_OUTPUT"
+          case "$status" in
+            0) git push origin HEAD:main ;;
+            3) ;;
+            *) exit "$status" ;;
+          esac
+
+      - name: Collect conflict context
+        if: steps.sync.outputs.status == '3'
+        run: |
+          # Outside the worktree, so nothing here can be committed.
+          CONTEXT=$RUNNER_TEMP/sync
+          echo "CONTEXT=$CONTEXT" >>"$GITHUB_ENV"
+          mkdir -p "$CONTEXT"
+          git diff --name-only --diff-filter=U >"$CONTEXT/conflicts.txt"
+          git diff --cached --name-only HEAD >"$CONTEXT/merge-staged.txt"
+          : >"$CONTEXT/deletions.txt"
+          base=$(git merge-base HEAD MERGE_HEAD)
+          xargs -a "$CONTEXT/conflicts.txt" -d '\n' git diff "$base" MERGE_HEAD -- >"$CONTEXT/upstream.diff"
+
+      - id: resolve
+        name: Resolve conflicts
+        if: steps.sync.outputs.status == '3'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1.0.250
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: |
+            A merge of upstream changes from vendor/${{ matrix.source }} into main is in progress and has conflicts. Resolve them.
+
+            Read these first:
+            - AGENTS.md, section "Resolving a sync conflict". Follow it exactly.
+            - CUSTOMIZATIONS.md. Each line is a customization to keep.
+            - ${{ env.CONTEXT }}/conflicts.txt lists the conflicted paths.
+            - ${{ env.CONTEXT }}/upstream.diff is what upstream changed in those paths since the last sync.
+
+            For every conflicted path, write the resolved file with no conflict markers. When deleting a path is the right resolution, add it as a line to ${{ env.CONTEXT }}/deletions.txt instead. If a customization became obsolete, update CUSTOMIZATIONS.md. Change no other path; the workflow stages and checks your edits.
+          claude_args: |
+            --model sonnet
+            --add-dir ${{ env.CONTEXT }}
+            --allowedTools "Read,Edit,Write,Glob,Grep"
+            --disallowedTools "Bash,WebFetch,WebSearch,Read(./.git/**),Edit(./.git/**),Read(//proc/**)"
+
+      - id: resolved
+        name: Stage the resolution and check its scope
+        if: steps.sync.outputs.status == '3'
+        env:
+          OUTCOME: ${{ steps.resolve.outcome }}
+        run: |
+          git remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          outside=$(grep -vxF -f "$CONTEXT/conflicts.txt" "$CONTEXT/deletions.txt" || true)
+          if [ -n "$outside" ]; then
+            printf '::error::the resolver asked to delete paths that are not conflicted:\n%s\n' "$outside"
+            exit 1
+          fi
+          { git diff --cached --name-only HEAD; git diff --name-only; git ls-files --others; } | sort -u >"$CONTEXT/changed.txt"
+          { cat "$CONTEXT/conflicts.txt" "$CONTEXT/merge-staged.txt"; echo CUSTOMIZATIONS.md; } | sort -u >"$CONTEXT/allowed.txt"
+          outside=$(comm -23 "$CONTEXT/changed.txt" "$CONTEXT/allowed.txt")
+          if [ -n "$outside" ]; then
+            printf '::error::the resolver changed paths outside its scope:\n%s\n' "$outside"
+            exit 1
+          fi
+          xargs -a "$CONTEXT/changed.txt" -d '\n' -r git add -A --
+          xargs -a "$CONTEXT/deletions.txt" -d '\n' -r git rm -qf --ignore-unmatch --
+          if [ -n "$(git diff --name-only)$(git ls-files --others)" ]; then
+            echo "::error::unstaged or untracked changes remain after staging the resolution"
+            exit 1
+          fi
+          git diff --cached HEAD >"$CONTEXT/resolution.diff"
+          if [ "$OUTCOME" = success ] &&
+             [ -z "$(git diff --name-only --diff-filter=U)" ] &&
+             ! grep -qE '^\+(<<<<<<<|>>>>>>>) ' "$CONTEXT/resolution.diff"; then
+            echo "ok=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - id: check
+        name: Independently check the resolution
+        if: steps.resolved.outputs.ok == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1.0.250
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: |
+            Another agent resolved merge conflicts between upstream skill changes (vendor/${{ matrix.source }}) and this repository's customizations. Judge the resolution independently.
+
+            Read:
+            - AGENTS.md, section "Resolving a sync conflict", for the rules the resolution must follow.
+            - CUSTOMIZATIONS.md, as staged.
+            - ${{ env.CONTEXT }}/upstream.diff, what upstream changed in the conflicted paths.
+            - ${{ env.CONTEXT }}/resolution.diff, the whole staged merge against main before the merge.
+
+            APPROVE only if every customization in CUSTOMIZATIONS.md still holds, every upstream change that does not contradict one was taken, and CUSTOMIZATIONS.md drops or updates any customization the resolution made obsolete. Otherwise REJECT. The reason names the paths and lines at fault, or says why the resolution is sound.
+          claude_args: |
+            --model sonnet
+            --add-dir ${{ env.CONTEXT }}
+            --allowedTools "Read,Glob,Grep"
+            --disallowedTools "Bash,Edit,Write,WebFetch,WebSearch,Read(./.git/**),Read(//proc/**)"
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVE","REJECT"]},"reason":{"type":"string"}},"required":["verdict","reason"]}'
+
+      - id: verdict
+        name: Read the verdict
+        if: steps.sync.outputs.status == '3'
+        env:
+          OUTPUT: ${{ steps.check.outputs.structured_output }}
+        run: |
+          [ -n "$OUTPUT" ] || OUTPUT='{}'
+          verdict=$(jq -r '.verdict // "NONE"' <<<"$OUTPUT")
+          echo "verdict=$verdict" >>"$GITHUB_OUTPUT"
+          {
+            echo "reason<<END_OF_REASON"
+            jq -r '.reason // ""' <<<"$OUTPUT"
+            echo "END_OF_REASON"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Land the approved resolution
+        if: steps.verdict.outputs.verdict == 'APPROVE'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          git commit --no-edit
+          tools/sync "$SOURCE"
+          git push origin HEAD:main
+
+      - name: Open a pull request for a person
+        if: steps.sync.outputs.status == '3' && steps.verdict.outputs.verdict != 'APPROVE'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          REASON: ${{ steps.verdict.outputs.reason }}
+          RESOLVED: ${{ steps.resolved.outputs.ok }}
+        run: |
+          if gh pr list --repo "$GITHUB_REPOSITORY" --state open --label "$LABEL" --json headRefName \
+               --jq '.[].headRefName' | grep -q "^sync/$SOURCE-"; then
+            echo "an open sync PR for $SOURCE already exists"
+            exit 0
+          fi
+          if [ "$VERDICT" = REJECT ]; then
+            reason="The checker rejected the automatic resolution: $REASON"
+          elif [ "$RESOLVED" = true ]; then
+            reason="The checker did not return a verdict. The automatic resolution is committed here unreviewed."
+          else
+            reason="The resolver did not finish. Conflict markers are committed as-is for a person to resolve."
+          fi
+          git remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          branch="sync/$SOURCE-$(date -u +%Y-%m-%d)"
+          git switch -c "$branch"
+          git commit --no-edit
+          git push origin "$branch"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --label "$LABEL" \
+            --title "sync($SOURCE): resolve upstream conflicts" \
+            --body-file - <<EOF
+          $reason
+
+          Conflicted paths:
+
+          $(sed 's/^/- /' "$CONTEXT/conflicts.txt")
+
+          Resolve them per the conflict rules in AGENTS.md, then merge.
+          EOF
+
+      - name: Open an issue for any other failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="sync($SOURCE) failed"
+          if gh issue list --repo "$GITHUB_REPOSITORY" --state open --label "$LABEL" --json title \
+               --jq '.[].title' | grep -qxF "$title"; then
+            echo "an open issue for $SOURCE already exists"
+            exit 0
+          fi
+          gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" --title "$title" \
+            --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

@@ -1,101 +1,61 @@
 # skills
 
-Skills I enjoy using. `tools/sync` merges upstream updates without losing my edits.
+The skills and agents I run in Claude Code and Codex, on every machine. Upstream skill repos are merged in nightly without losing my edits.
 
 ## Sources
 
-`sources.json` lists every upstream repo, the ref to follow, the directory its copy lives in, and which upstream paths to carry.
+`sources.json` lists the upstreams in precedence order and what to take from each.
 
-| Source | Upstream | Carried | Lives in |
-| --- | --- | --- | --- |
-| `pstack-claude` | [michael-denyer/pstack-claude](https://github.com/michael-denyer/pstack-claude) | the whole repo | `sources/pstack-claude` |
-| `mattpocock` | [mattpocock/skills](https://github.com/mattpocock/skills) | 8 skills | `sources/mattpocock` |
+| Source | Upstream | Taken |
+| --- | --- | --- |
+| `pstack` | [backnotprop/pstack](https://github.com/backnotprop/pstack) | every skill, plus the `poteto-agent` and `comment-sicko` agents |
+| `cursor-team-kit` | [cursor/plugins](https://github.com/cursor/plugins/tree/main/cursor-team-kit) | `deslop`, `fix-ci`, `get-pr-comments`, `thermo-nuclear-code-quality-review` |
+| `emil` | [emilkowalski/skills](https://github.com/emilkowalski/skills) | every skill |
+| `humanlayer` | [humanlayer/skills](https://github.com/humanlayer/skills) | `show-me`, `rpi`, and the `rpi` agents |
+| `mattpocock` | [mattpocock/skills](https://github.com/mattpocock/skills) | engineering and productivity skills except `prototype` and `to-questionnaire`, plus `chief-of-staff` |
 
-The `mattpocock` skills are `improve-codebase-architecture`, `grill-with-docs`, `writing-for-agents`, `pr`, and `retro`, plus the three skills they call (`codebase-design`, `domain-modeling`, `grilling`).
+When two sources ship a skill with the same name, the earlier source keeps it and the later one is renamed with its prefix, such as `matt-tdd`. Upstream licenses are in `licenses/`.
 
-Both upstreams are MIT licensed. Their license and notice files are kept inside each source directory.
+## Install on a new machine
 
-## Note
-
-The original `pstack` and Matt Pocock skills will collide, so delete 'em.
-
-### Plugin Install
-
-Use this path in Claude Code. The `pstack` plugin includes its agents and its session-start hook, which the skills CLI does not install.
+Requires `git` 2.42 or later, `jq`, and `bash`.
 
 ```shell
-/plugin marketplace add Sunnshiine/skills
-/plugin install pstack@sstack
-/plugin install mattpocock@sstack
+git clone https://github.com/Sunnshiine/skills ~/Projects/skills
+~/Projects/skills/tools/install
+~/Projects/skills/tools/install --launchd
 ```
 
-### Skills CLI Install
+`tools/install` symlinks every skill into `~/.agents/skills` (read by Codex) and `~/.claude/skills`, links agents into `~/.claude/agents`, generates their Codex versions in `~/.codex/agents`, and adds the shared instructions in `config/global-instructions.md` to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. It never overwrites a path it does not manage; it warns and skips it instead. Rerun it at any time.
+
+`--launchd` adds a LaunchAgent that runs `tools/install --update` every six hours: it pulls this repo and reruns `tools/install`, but only while the clone is on `main`. It logs to `~/Library/Logs/skills-sync.log` with a timestamp on each line.
+
+To move from an older setup (plugins, the skills CLI, or hand-copied skills), run `tools/install --clean` to see what it would remove, then `tools/install --clean --yes` to remove it and install. It removes skills the skills CLI copied in, links that are broken or point into a plugin cache, and anything in the way of a path this repo installs. It keeps your other files, directories, and links, and `~/.claude/skills/synced`, which claude.ai manages.
+
+## One-time setup for the nightly sync
+
+The sync workflow resolves conflicts with Claude, which needs a Claude Code OAuth token. It also opens pull requests, which GitHub Actions may do only once the repo allows it ("Allow GitHub Actions to create and approve pull requests"):
 
 ```shell
-npx skills@latest add Sunnshiine/skills
+claude setup-token
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo Sunnshiine/skills
+gh api -X PUT repos/Sunnshiine/skills/actions/permissions/workflow \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
 ```
 
-A skills CLI install of pstack has no hook, so ask for `poteto-mode` by name. See the [pstack reference](sources/pstack-claude/docs/reference.md#shared-skills-installation) for what a skills-only install contains.
+## How sync works
 
-To update installed skills after this repo changes:
+Each source has a `vendor/<source>` branch that holds only that source's upstream files, already placed and renamed the way they appear on `main`. `tools/sync <source>` (or `--all`) rewrites the vendor branch from upstream and merges it into the current branch. Because the vendor branch is the merge base, git keeps my edits and applies upstream's, and reports a conflict only where both changed the same lines.
 
-```shell
-npx skills@latest update
-```
+The [sync workflow](.github/workflows/sync.yml) runs nightly and on demand. A clean merge is pushed to `main`. A conflict goes to a Claude resolver and then to an independent Claude checker. An approved resolution lands on `main`; a rejected one becomes a pull request labeled `sync-needs-human`.
 
-## How syncing works
+## Customizations
 
-Each source has a branch named `vendor/<source>`. That branch holds only unmodified upstream snapshots, at the same paths the files have on `main`. `tools/sync` commits a new snapshot to the vendor branch, then merges the vendor branch into your current branch.
+[`CUSTOMIZATIONS.md`](CUSTOMIZATIONS.md) lists every way this repo differs from upstream, one line per change. The conflict resolver reads it to know which edits to keep. Agents editing this repo follow [`AGENTS.md`](AGENTS.md).
 
-Because the vendor branch is the merge base, git's three-way merge keeps your edits and applies upstream's. Git reports a conflict only where you and upstream changed the same lines.
-
-## Pull upstream changes
-
-Requires `git` 2.42 or later, `jq`, and `tar`.
-
-1. Start a branch, so that the update arrives as a pull request you can review.
-
-   ```shell
-   git switch -c sync/pstack-claude
-   ```
-
-2. Run the sync. The second argument is optional and pins a branch, tag, or commit SHA.
-
-   ```shell
-   tools/sync pstack-claude
-   ```
-
-3. If git reports conflicts, resolve them, then run `git add` and `git commit`. To back out, run `git merge --abort`.
-
-4. To reject part of an upstream change, revert those lines on the sync branch and commit. Later syncs leave your version alone until upstream changes the same lines again.
-
-5. If the source is `pstack-claude`, regenerate its stamped files and run its tests.
-
-   ```shell
-   cd sources/pstack-claude && bun tools/generate.mjs && bun test tests/
-   ```
-
-6. Push the branch and open a pull request.
-
-To see what upstream changed before you merge anything, run `tools/sync <source> --no-merge`, then `git diff HEAD...vendor/<source>`.
-
-## See your modifications
-
-```shell
-git diff vendor/pstack-claude main -- sources/pstack-claude
-git diff vendor/mattpocock main -- sources/mattpocock
-```
-
-## Add a source or a skill
-
-1. Add an entry to `sources.json`, or add a path to an existing entry's `paths`. A path that does not exist upstream makes the sync fail and name the path. The same failure tells you when upstream renames or moves a skill you carry.
-2. Run `tools/sync <source>`.
-3. List any new skill in `.claude-plugin/marketplace.json`.
-
-## Test the sync tool
-
-`tools/sync.test` builds throwaway repos in a temp directory and needs no network.
+## Tests
 
 ```shell
 tools/sync.test
+tools/install.test
 ```
