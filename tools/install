@@ -56,27 +56,51 @@ cut -f2 "$tmp/desired" >"$tmp/targets"
 # A desired symlink that already points at its source is ours even without a manifest entry.
 in_place() { awk -F'\t' -v t="$1" -v s="$2" '$1 == "link" && $2 == t && $3 == s { f = 1 } END { exit !f }' "$tmp/desired"; }
 
+# Reads one top-level key: plain, quoted, or a `|` / `>` block scalar.
 frontmatter_value() {
-  local v
-  v=$(awk -v k="$2" '
+  awk -v k="$2" -v sq="'" '
+    { sub(/\r$/, "") }
     NR == 1 && $0 == "---" { fm = 1; next }
-    fm && $0 == "---" { exit }
-    fm && index($0, k ":") == 1 { v = substr($0, length(k) + 2); sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v); print v; exit }
-  ' "$1")
-  case "$v" in
-    \"*\") v=${v#\"}; v=${v%\"}; v=$(printf '%s' "$v" | sed -e 's/\\"/"/g' -e 's/\\\\/\\/g') ;;
-    \'*\') v=${v#\'}; v=${v%\'}; v=${v//\'\'/\'} ;;
-  esac
-  printf '%s' "$v"
+    !fm || $0 == "---" { exit }
+    block && /^[ \t]*$/ { lines[++n] = ""; next }
+    block && /^[ \t]/ {
+      if (!indent) { match($0, /^[ \t]+/); indent = RLENGTH }
+      lines[++n] = substr($0, indent + 1)
+      next
+    }
+    block { exit }
+    index($0, k ":") == 1 {
+      v = substr($0, length(k) + 2)
+      sub(/^[ \t]+/, "", v)
+      sub(/[ \t]+$/, "", v)
+      if (v ~ /^[|>][-+]?$/) { block = substr(v, 1, 1); next }
+      if (length(v) > 1 && v ~ /^".*"$/) {
+        v = substr(v, 2, length(v) - 2); gsub(/\\"/, "\"", v); gsub(/\\\\/, "\\", v)
+      } else if (length(v) > 1 && substr(v, 1, 1) == sq && substr(v, length(v)) == sq) {
+        v = substr(v, 2, length(v) - 2); gsub(sq sq, sq, v)
+      }
+      printf "%s", v
+      exit
+    }
+    END {
+      while (n > 0 && lines[n] == "") n--
+      for (i = 1; i <= n; i++) {
+        if (block == "|") printf "%s%s", (i > 1 ? "\n" : ""), lines[i]
+        else if (lines[i] == "") printf "\n"
+        else printf "%s%s", (i > 1 && lines[i - 1] != "" ? " " : ""), lines[i]
+      }
+    }
+  ' "$1"
 }
 
 frontmatter_body() {
-  awk 'NR == 1 && $0 == "---" { fm = 1; next } fm == 1 { if ($0 == "---") fm = 2; next } { print }' "$1" |
+  awk '{ sub(/\r$/, "") } NR == 1 && $0 == "---" { fm = 1; next } fm == 1 { if ($0 == "---") fm = 2; next } { print }' "$1" |
     tr -d '\r' |
     awk '{ l[NR] = $0 } END { s = 1; while (s <= NR && l[s] ~ /^[ \t]*$/) s++; e = NR; while (e >= s && l[e] ~ /^[ \t]*$/) e--; for (i = s; i <= e; i++) print l[i] }'
 }
 
 toml_escape() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+toml_line() { toml_escape | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'; }
 
 # Field mapping follows codex's external-agent-migration (subagents.rs); `model` is left out on purpose.
 render_codex_agent() {
@@ -94,8 +118,8 @@ render_codex_agent() {
     readOnly) sandbox=read-only ;;
   esac
   echo "$CODEX_HEADER"
-  printf 'name = "%s"\n' "$(printf '%s' "$name" | toml_escape)"
-  printf 'description = "%s"\n' "$(printf '%s' "$description" | toml_escape)"
+  printf 'name = "%s"\n' "$(printf '%s' "$name" | toml_line)"
+  printf 'description = "%s"\n' "$(printf '%s' "$description" | toml_line)"
   if [ -n "$effort" ]; then printf 'model_reasoning_effort = "%s"\n' "$effort"; fi
   if [ -n "$sandbox" ]; then printf 'sandbox_mode = "%s"\n' "$sandbox"; fi
   printf 'developer_instructions = """\n%s"""\n' "$(printf '%s' "$body" | toml_escape)"
@@ -160,6 +184,10 @@ install_instructions() {
 
   { echo "$BLOCK_BEGIN"; cat "$repo/config/global-instructions.md"; echo "$BLOCK_END"; } >"$tmp/block"
   if [ -f "$codex_md" ] && grep -qxF "$BLOCK_BEGIN" "$codex_md"; then
+    if ! grep -qxF "$BLOCK_END" "$codex_md"; then
+      echo "error: $codex_md has '$BLOCK_BEGIN' but no '$BLOCK_END'. Restore the END line or delete the block, then rerun." >&2
+      exit 1
+    fi
     awk -v b="$BLOCK_BEGIN" -v e="$BLOCK_END" -v blk="$tmp/block" '
       $0 == b { while ((getline l < blk) > 0) print l; skip = 1; next }
       $0 == e { skip = 0; next }

@@ -144,4 +144,43 @@ check "clean runs the plugin removals" contains "plugin uninstall pstack@pstack-
 plugin marketplace list --json
 plugin marketplace remove pstack-claude" "$(cat "$base/existing/claude.log")"
 
+scenario frontmatter
+printf -- '---\r\nname: crlf\r\ndescription: "Ends lines with CRLF"\r\n---\r\nBody.\r\n' >"$repo/agents/crlf.md"
+cat >"$repo/agents/folded.md" <<'EOF'
+---
+name: folded
+description: >-
+  Folds these
+  two lines.
+
+  Keeps a paragraph.
+notes: |
+  ignored
+---
+Body.
+EOF
+cat >"$repo/agents/literal.md" <<'EOF'
+---
+name: literal
+description: |
+  line one
+  line two
+---
+Body.
+EOF
+run >/dev/null 2>&1
+check "a CRLF agent renders to codex" same "$(sed -n '2,3p' "$home/.codex/agents/crlf.toml")" 'name = "crlf"
+description = "Ends lines with CRLF"'
+check "a folded description joins its lines" same "$(sed -n 3p "$home/.codex/agents/folded.toml")" 'description = "Folds these two lines.\nKeeps a paragraph."'
+check "a literal description keeps its newlines" same "$(sed -n 3p "$home/.codex/agents/literal.toml")" 'description = "line one\nline two"'
+
+scenario unterminated
+mkdir -p "$home/.codex"
+printf 'before\n<!-- BEGIN skills repo global instructions (managed by tools/install) -->\nold\nmy later rules\n' >"$home/.codex/AGENTS.md"
+before=$(cat "$home/.codex/AGENTS.md")
+out=$(run 2>&1) && status=0 || status=$?
+check "a managed block with no END marker fails the install" test "$status" = 1
+check "a managed block with no END marker is named in the error" contains "no '<!-- END skills repo global instructions -->'" "$out"
+check "a managed block with no END marker keeps the file intact" same "$(cat "$home/.codex/AGENTS.md")" "$before"
+
 echo "all checks passed"
