@@ -175,7 +175,6 @@ checkout_vendor() {
   fi
 }
 
-# Rewrites the vendor branch to exactly the transformed upstream tree, commits if it changed, and pushes.
 snapshot() {
   local s=$1 branch="vendor/$1" wt="$tmp/wt/$1" up="$tmp/up/$1"
   local url sha kind final bare rel
@@ -245,7 +244,6 @@ renames_block() {
   echo "$BLOCK_END"
 }
 
-# Keeps the generated rename block in CUSTOMIZATIONS.md current and commits it if it changed.
 record_renames() {
   local file="$root/CUSTOMIZATIONS.md"
   renames_block >"$tmp/block"
