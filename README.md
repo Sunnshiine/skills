@@ -28,9 +28,9 @@ git clone https://github.com/Sunnshiine/skills ~/Projects/skills
 
 `tools/install` symlinks every skill into `~/.agents/skills` (read by Codex) and `~/.claude/skills`, links agents into `~/.claude/agents`, generates their Codex versions in `~/.codex/agents`, and adds the shared instructions in `config/global-instructions.md` to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. It never overwrites a path it does not manage; it warns and skips it instead. Rerun it at any time.
 
-`--launchd` adds a LaunchAgent that pulls this repo and reruns `tools/install` every six hours. It logs to `~/Library/Logs/skills-sync.log`.
+`--launchd` adds a LaunchAgent that runs `tools/install --update` every six hours: it pulls this repo and reruns `tools/install`, but only while the clone is on `main`. It logs to `~/Library/Logs/skills-sync.log` with a timestamp on each line.
 
-To move from an older setup (plugins, the skills CLI, or hand-copied skills), run `tools/install --clean` to see what it would remove, then `tools/install --clean --yes` to remove it and install.
+To move from an older setup (plugins, the skills CLI, or hand-copied skills), run `tools/install --clean` to see what it would remove, then `tools/install --clean --yes` to remove it and install. It removes old symlinks and anything in the way of a path this repo installs. It keeps other files and directories you created, and `~/.claude/skills/synced`, which claude.ai manages.
 
 ## One-time setup for the nightly sync
 

@@ -52,7 +52,12 @@ case "\$*" in
   "plugin marketplace list --json") echo '[{"name":"pstack-claude"},{"name":"claude-plugins-official"}]' ;;
 esac
 EOF
-  chmod +x "$d/bin/claude"
+  cat >"$d/bin/launchctl" <<EOF
+#!/bin/sh
+echo "\$1" >>"$d/launchctl.log"
+[ "\$1" != print ]
+EOF
+  chmod +x "$d/bin/claude" "$d/bin/launchctl"
   stub_path="$d/bin:$PATH"
 }
 
@@ -173,6 +178,38 @@ check "a CRLF agent renders to codex" same "$(sed -n '2,3p' "$home/.codex/agents
 description = "Ends lines with CRLF"'
 check "a folded description joins its lines" same "$(sed -n 3p "$home/.codex/agents/folded.toml")" 'description = "Folds these two lines.\nKeeps a paragraph."'
 check "a literal description keeps its newlines" same "$(sed -n 3p "$home/.codex/agents/literal.toml")" 'description = "line one\nline two"'
+
+scenario launchd
+run --launchd >/dev/null
+run --launchd >/dev/null
+check "a --launchd rerun boots the old job out before bootstrapping" same "$(cat "$base/launchd/launchctl.log")" "bootout
+print
+bootstrap
+bootout
+print
+bootstrap"
+plist=$home/Library/LaunchAgents/com.sunnshiine.skills-sync.plist
+check "the LaunchAgent runs install --update" same "$(plutil -extract ProgramArguments.0 raw -o - "$plist") $(plutil -extract ProgramArguments.1 raw -o - "$plist")" "$repo/tools/install --update"
+
+scenario update
+git init --quiet -b main "$repo"
+git -C "$repo" add -A
+git -C "$repo" -c user.email=t@example.com -c user.name=t commit --quiet -m init
+git clone --quiet "$repo" "$base/update/clone"
+clone=$base/update/clone
+mkdir -p "$repo/skills/gamma"
+printf -- '---\nname: gamma\n---\n' >"$repo/skills/gamma/SKILL.md"
+git -C "$repo" add -A
+git -C "$repo" -c user.email=t@example.com -c user.name=t commit --quiet -m gamma
+out=$(HOME=$home PATH=$stub_path "$clone/tools/install" --update 2>&1)
+check "--update pulls and installs the new skill" same "$(readlink "$home/.agents/skills/gamma")" "$clone/skills/gamma"
+check "--update timestamps every log line" not grep -vE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} ' <<<"$out"
+git -C "$clone" switch --quiet -c topic
+git -C "$repo" rm --quiet -r skills/gamma
+git -C "$repo" -c user.email=t@example.com -c user.name=t commit --quiet -m "drop gamma"
+out=$(HOME=$home PATH=$stub_path "$clone/tools/install" --update 2>&1)
+check "--update off main logs that it skipped" contains "skipping update: $clone is on topic, not main" "$out"
+check "--update off main leaves the clone alone" test -d "$clone/skills/gamma"
 
 scenario unterminated
 mkdir -p "$home/.codex"
