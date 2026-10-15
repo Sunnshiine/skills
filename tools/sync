@@ -201,9 +201,10 @@ done
 set_frontmatter_name() {
   local file=$1 new=$2
   awk -v n="$new" '
-    NR == 1 && $0 == "---" { fm = 1; print; next }
-    fm && $0 == "---" { fm = 0 }
-    fm && !done && /^name:/ { print "name: " n; done = 1; next }
+    { line = $0; cr = sub(/\r$/, "", line) ? "\r" : "" }
+    NR == 1 && line == "---" { fm = 1; print; next }
+    fm && line == "---" { fm = 0 }
+    fm && !done && line ~ /^name:/ { print "name: " n cr; done = 1; next }
     { print }
   ' "$file" >"$file.tmp"
   mv "$file.tmp" "$file"

@@ -233,4 +233,21 @@ check "the customization heading follows the rename" same "$(sed -n '1,5p' "$r/C
 - Rewrote l3."
 check "the merge commit names its source" same "$(git -C "$r" log --format=%s --merges -1 --first-parent HEAD~1)" "sync(alpha): merge upstream $(git -C "$a" rev-parse --short=7 HEAD)"
 
+scenario crlf
+r=$base/crlf/repo
+b=$base/crlf/beta
+drop_broken "$r"
+printf -- '---\r\nname: tdd\r\ndescription: beta tdd\r\n---\r\nbody\r\n' >"$b/skills/eng/tdd/SKILL.md"
+commit_in "$b" "beta uses CRLF"
+sync_in "$r" beta >/dev/null
+check "a rename rewrites CRLF frontmatter and keeps its line endings" same "$(od -c "$r/skills/b-tdd/SKILL.md")" "$(printf -- '---\r\nname: b-tdd\r\ndescription: beta tdd\r\n---\r\nbody\r\n' | od -c)"
+
+scenario nomerge
+r=$base/nomerge/repo
+drop_broken "$r"
+main_before=$(git -C "$r" rev-parse main)
+sync_in "$r" alpha --no-merge >/dev/null
+check "--no-merge advances the vendor branch" git -C "$r" rev-parse --verify vendor/alpha
+check "--no-merge leaves the current branch untouched" same "$(git -C "$r" rev-parse main)" "$main_before"
+
 echo "all checks passed"
