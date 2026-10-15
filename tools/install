@@ -231,6 +231,8 @@ uninstall_plugin() {
   fi
 }
 
+# Removes what an older setup linked in (symlinks) and whatever blocks a desired target.
+# Unmanaged files and directories that block nothing are the user's and stay.
 clean_home() {
   local dir entry id scope path name old_line="@~/.claude/pstack-models.md"
   for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.claude/agents"; do
@@ -238,9 +240,11 @@ clean_home() {
     for entry in "$dir"/* "$dir"/.[!.]*; do
       present "$entry" || continue
       managed "$entry" && continue
+      # claude.ai manages this directory.
+      [ "$entry" = "$HOME/.claude/skills/synced" ] && continue
       [ -L "$entry" ] && in_place "$entry" "$(readlink "$entry")" && continue
       if grep -qxF "$entry" "$tmp/targets"; then act "replace $entry" rm -rf "$entry"
-      else act "remove $entry" rm -rf "$entry"
+      elif [ -L "$entry" ]; then act "remove $entry" rm -f "$entry"
       fi
     done
   done

@@ -111,20 +111,31 @@ check "existing AGENTS.md content is kept" same "$(cat "$home/.codex/AGENTS.md")
 Use the pr skill.
 <!-- END skills repo global instructions -->"
 
-printf 'unrelated\n' >"$home/.claude/agents/stray.md"
+printf 'unrelated\n' >"$home/.claude/agents/mine.md"
+mkdir -p "$base/existing/old-plugin" "$base/existing/dotfiles" "$home/.claude/skills"
+ln -s "$base/existing/old-plugin" "$home/.claude/agents/stray.md"
+ln -s "$base/existing/old-plugin" "$home/.claude/skills/synced"
+printf '{"skills":{}}\n' >"$base/existing/dotfiles/skill-lock.json"
+ln -s "$base/existing/dotfiles/skill-lock.json" "$home/.agents/.skill-lock.json"
 printf '@~/.claude/pstack-models.md\nmy rules\n' >"$home/.claude/CLAUDE.md"
 printf 'old\n' >"$home/.claude/pstack-models.md"
 before=$(snapshot "$home")
 out=$(run --clean)
 check "a clean dry run changes nothing" same "$(snapshot "$home")" "$before"
 check "a clean dry run lists the unmanaged skill to replace" contains "would replace $home/.agents/skills/alpha" "$out"
-check "a clean dry run lists stray agents" contains "would remove $home/.claude/agents/stray.md" "$out"
+check "a clean dry run lists stray agent links" contains "would remove $home/.claude/agents/stray.md" "$out"
+check "a clean dry run leaves the user's own agents out" not contains "mine.md" "$out"
+check "a clean dry run leaves claude.ai's synced skills out" not contains "synced" "$out"
 check "a clean dry run lists the pstack plugin" contains "would uninstall Claude Code plugin pstack@pstack-claude (user scope)" "$out"
 check "a clean dry run lists the pstack marketplace" contains "would remove Claude Code marketplace pstack-claude" "$out"
 check "a clean dry run leaves unrelated plugins out" not contains "other@elsewhere" "$out"
 run --clean --yes >/dev/null
 check "clean replaces the unmanaged skill with a link" same "$(readlink "$home/.agents/skills/alpha")" "$repo/skills/alpha"
-check "clean removes stray agents" not test -e "$home/.claude/agents/stray.md"
+check "clean removes stray agent links" not test -L "$home/.claude/agents/stray.md"
+check "clean keeps the user's own agents" same "$(cat "$home/.claude/agents/mine.md")" "unrelated"
+check "clean keeps claude.ai's synced skills" test -L "$home/.claude/skills/synced"
+check "clean unlinks the skills CLI lock" not test -L "$home/.agents/.skill-lock.json"
+check "clean leaves the lock link's target alone" test -f "$base/existing/dotfiles/skill-lock.json"
 check "clean drops the old model config include" same "$(cat "$home/.claude/CLAUDE.md")" "my rules
 
 @$repo/config/global-instructions.md"
