@@ -280,10 +280,34 @@ uninstall_plugin() {
   fi
 }
 
-# Removes what an older setup linked in (symlinks) and whatever blocks a desired target.
-# Unmanaged files and directories that block nothing are the user's and stay.
+# The absolute, symlink-free path a link points at.
+link_target() {
+  local t
+  t=$(readlink "$1")
+  case "$t" in
+    /*) ;;
+    *) t="$(dirname "$1")/$t" ;;
+  esac
+  (cd "$(dirname "$t")" 2>/dev/null && printf '%s/%s\n' "$(pwd -P)" "$(basename "$t")")
+}
+
+# A link is stale when its target is gone, is about to be removed, or lives in a plugin cache.
+stale_link() {
+  local t
+  t=$(link_target "$1") || return 0
+  [ -e "$1" ] || return 0
+  grep -qxF "$t" "$tmp/removed" && return 0
+  case "$t" in "$(cd "$HOME" && pwd -P)/.claude/plugins/"*) return 0 ;; esac
+  return 1
+}
+
+# Removes what an older setup left (skills CLI copies, stale links) and whatever blocks a
+# desired target. Other files, directories, and links are the user's and stay.
 clean_home() {
   local dir entry id scope path name old_line="@~/.claude/pstack-models.md"
+  : >"$tmp/removed"
+  jq -r '.skills | keys[]' "$HOME/.agents/.skill-lock.json" >"$tmp/cli-skills" 2>/dev/null || : >"$tmp/cli-skills"
+  # ~/.agents/skills goes first so that links into a copy removed there count as stale.
   for dir in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.claude/agents"; do
     [ -d "$dir" ] || continue
     for entry in "$dir"/* "$dir"/.[!.]*; do
@@ -292,8 +316,13 @@ clean_home() {
       # claude.ai manages this directory.
       [ "$entry" = "$HOME/.claude/skills/synced" ] && continue
       [ -L "$entry" ] && in_place "$entry" "$(readlink "$entry")" && continue
-      if grep -qxF "$entry" "$tmp/targets"; then act "replace $entry" rm -rf "$entry"
-      elif [ -L "$entry" ]; then act "remove $entry" rm -f "$entry"
+      if grep -qxF "$entry" "$tmp/targets"; then
+        act "replace $entry" rm -rf "$entry"
+      elif [ "$dir" = "$HOME/.agents/skills" ] && [ ! -L "$entry" ] && grep -qxF "$(basename "$entry")" "$tmp/cli-skills"; then
+        act "remove $entry (installed by the skills CLI)" rm -rf "$entry"
+        echo "$(cd "$dir" && pwd -P)/$(basename "$entry")" >>"$tmp/removed"
+      elif [ -L "$entry" ] && stale_link "$entry"; then
+        act "remove $entry" rm -f "$entry"
       fi
     done
   done
