@@ -34,11 +34,13 @@ To move from an older setup (plugins, the skills CLI, or hand-copied skills), ru
 
 ## One-time setup for the nightly sync
 
-The sync workflow resolves conflicts with Claude, which needs a Claude Code OAuth token:
+The sync workflow resolves conflicts with Claude, which needs a Claude Code OAuth token. It also opens pull requests, which GitHub Actions may do only once the repo allows it ("Allow GitHub Actions to create and approve pull requests"):
 
 ```shell
 claude setup-token
 gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo Sunnshiine/skills
+gh api -X PUT repos/Sunnshiine/skills/actions/permissions/workflow \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
 ```
 
 ## How sync works
