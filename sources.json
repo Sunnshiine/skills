@@ -1,24 +1,59 @@
 {
-  "pstack-claude": {
-    "url": "https://github.com/michael-denyer/pstack-claude",
-    "ref": "main",
-    "prefix": "sources/pstack-claude",
-    "paths": ["."]
-  },
-  "mattpocock": {
-    "url": "https://github.com/mattpocock/skills",
-    "ref": "main",
-    "prefix": "sources/mattpocock",
-    "paths": [
-      "LICENSE",
-      "skills/engineering/improve-codebase-architecture",
-      "skills/engineering/grill-with-docs",
-      "skills/engineering/codebase-design",
-      "skills/engineering/domain-modeling",
-      "skills/productivity/grilling",
-      "skills/productivity/writing-for-agents",
-      "skills/in-progress/pr",
-      "skills/in-progress/retro"
-    ]
-  }
+  "sources": [
+    {
+      "name": "pstack",
+      "url": "https://github.com/backnotprop/pstack",
+      "ref": "main",
+      "rename_prefix": "pstack-",
+      "skills": ["skills/*"],
+      "exclude": [],
+      "agents": ["agents/poteto-agent.md", "agents/comment-sicko.md"],
+      "license": "LICENSE"
+    },
+    {
+      "name": "cursor-team-kit",
+      "url": "https://github.com/cursor/plugins",
+      "ref": "main",
+      "rename_prefix": "cursor-",
+      "skills": [
+        "cursor-team-kit/skills/deslop",
+        "cursor-team-kit/skills/fix-ci",
+        "cursor-team-kit/skills/get-pr-comments",
+        "cursor-team-kit/skills/thermo-nuclear-code-quality-review"
+      ],
+      "exclude": [],
+      "agents": [],
+      "license": "cursor-team-kit/LICENSE"
+    },
+    {
+      "name": "emil",
+      "url": "https://github.com/emilkowalski/skills",
+      "ref": "main",
+      "rename_prefix": "emil-",
+      "skills": ["skills/*"],
+      "exclude": [],
+      "agents": [],
+      "license": "LICENSE"
+    },
+    {
+      "name": "humanlayer",
+      "url": "https://github.com/humanlayer/skills",
+      "ref": "main",
+      "rename_prefix": "hl-",
+      "skills": ["plugins/show-me/skills/show-me", "plugins/rpi/skills/rpi"],
+      "exclude": [],
+      "agents": ["plugins/rpi/agents/*.md"],
+      "license": "LICENSE"
+    },
+    {
+      "name": "mattpocock",
+      "url": "https://github.com/mattpocock/skills",
+      "ref": "main",
+      "rename_prefix": "matt-",
+      "skills": ["skills/engineering/*", "skills/productivity/*", "skills/in-progress/chief-of-staff"],
+      "exclude": ["skills/engineering/prototype", "skills/productivity/to-questionnaire"],
+      "agents": [],
+      "license": "LICENSE"
+    }
+  ]
 }

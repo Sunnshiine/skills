@@ -17,123 +17,171 @@ check() {
 }
 
 not() { ! "$@"; }
+same() { [ "$1" = "$2" ] || { printf -- '--- expected\n%s\n--- actual\n%s\n' "$1" "$2" >&2; return 1; }; }
 contains() { case "$2" in *"$1"*) return 0 ;; *) return 1 ;; esac; }
 worktrees() { git -C "$1" worktree list | wc -l | tr -d ' '; }
+tree() { git -C "$1" ls-tree -r --name-only "$2"; }
 commit_in() { git -C "$1" add -A && git -C "$1" commit --quiet -m "$2"; }
 sync_in() { local d=$1; shift; (cd "$d" && "$sync" "$@"); }
+skill() { mkdir -p "$1"; printf -- '---\nname: %s\ndescription: %s\n---\n%s' "$2" "$3" "$4" >"$1/SKILL.md"; }
 
 new_repo() {
   git init --quiet -b main "$1"
   git -C "$1" config user.email sync@example.com
   git -C "$1" config user.name "sync test"
   git -C "$1" config commit.gpgsign false
+  git -C "$1" config uploadpack.allowFilter true
 }
 
-new_upstream() {
-  local d=$1
-  new_repo "$d"
-  git -C "$d" config uploadpack.allowFilter true
-  mkdir -p "$d/skills/a"
-  printf 'top\nmiddle\nbottom\n' >"$d/shared.md"
-  printf 'MIT\n' >"$d/LICENSE"
-  printf 'doomed\n' >"$d/doomed.md"
-  printf 'skill a v1\n' >"$d/skills/a/SKILL.md"
-  commit_in "$d" "upstream v1"
-}
-
-new_consumer() {
-  local d=$1 up=$2
-  new_repo "$d"
-  cat >"$d/sources.json" <<EOF
-{
-  "whole": {"url": "file://$up", "ref": "main", "prefix": "sources/whole", "paths": ["."]},
-  "subset": {"url": "file://$up", "ref": "main", "prefix": "sources/subset", "paths": ["LICENSE", "skills/a"]},
-  "broken": {"url": "file://$up", "ref": "main", "prefix": "sources/broken", "paths": ["skills/nope"]}
-}
-EOF
-  printf '# consumer\n' >"$d/README.md"
-  commit_in "$d" "consumer init"
-}
-
+# alpha outranks beta; both ship a skill named tdd and one named proto.
 scenario() {
   local d="$base/$1"
-  mkdir -p "$d"
-  new_upstream "$d/upstream"
-  new_consumer "$d/consumer" "$d/upstream"
+  new_repo "$d/alpha"
+  skill "$d/alpha/skills/tdd" tdd "alpha tdd" $'alpha tdd body\n'
+  skill "$d/alpha/skills/proto" proto "alpha proto" $'alpha proto body\n'
+  mkdir -p "$d/alpha/agents"
+  printf -- '---\nname: helper\ndescription: helps\n---\nhelp\n' >"$d/alpha/agents/helper.md"
+  printf 'alpha license\n' >"$d/alpha/LICENSE"
+  printf 'not selected\n' >"$d/alpha/notes.md"
+  commit_in "$d/alpha" "alpha v1"
+
+  new_repo "$d/beta"
+  skill "$d/beta/skills/eng/tdd" tdd "beta tdd" $'beta tdd body\n'
+  skill "$d/beta/skills/eng/proto" proto "beta proto" $'beta proto body\n'
+  skill "$d/beta/skills/eng/diag" diag "beta diag" $'one\ntwo\nthree\n'
+  skill "$d/beta/skills/misc/junk" junk "junk" $'junk\n'
+  printf 'not a skill\n' >"$d/beta/skills/eng/README.md"
+  printf 'beta license\n' >"$d/beta/LICENSE"
+  commit_in "$d/beta" "beta v1"
+
+  new_repo "$d/repo"
+  cat >"$d/repo/sources.json" <<EOF
+{
+  "sources": [
+    {"name": "alpha", "url": "file://$d/alpha", "ref": "main", "rename_prefix": "a-",
+     "skills": ["skills/*"], "exclude": [], "agents": ["agents/*.md"], "license": "LICENSE"},
+    {"name": "beta", "url": "file://$d/beta", "ref": "main", "rename_prefix": "b-",
+     "skills": ["skills/eng/*"], "exclude": ["skills/eng/proto"], "agents": [], "license": "LICENSE"},
+    {"name": "broken", "url": "file://$d/beta", "ref": "main", "rename_prefix": "x-",
+     "skills": ["skills/nope"], "exclude": [], "agents": [], "license": null}
+  ]
+}
+EOF
+  printf '# repo\n' >"$d/repo/README.md"
+  commit_in "$d/repo" "repo init"
 }
 
-scenario import
-u=$base/import/upstream
-c=$base/import/consumer
-sync_in "$c" whole >/dev/null
-sync_in "$c" subset >/dev/null
-check "whole source lands the upstream root under its prefix" test -f "$c/sources/whole/shared.md"
-check "whole source keeps upstream nesting" test -f "$c/sources/whole/skills/a/SKILL.md"
-check "upstream .git is not vendored" not test -e "$c/sources/whole/.git"
-check "subset source lands only its listed paths" test -f "$c/sources/subset/skills/a/SKILL.md"
-check "subset source omits unlisted upstream files" not test -e "$c/sources/subset/shared.md"
-check "vendor branch is an orphan" test -z "$(git -C "$c" log --format=%P -1 vendor/whole)"
-check "vendor branch holds no consumer files" not git -C "$c" cat-file -e vendor/whole:README.md
-check "main records the sync as a merge" test -n "$(git -C "$c" log --format=%P -1 main | cut -d' ' -f2)"
-check "no leftover worktree registrations after import" test "$(worktrees "$c")" = 1
+drop_broken() {
+  jq '.sources |= map(select(.name != "broken"))' "$1/sources.json" >"$1/sources.json.tmp"
+  mv "$1/sources.json.tmp" "$1/sources.json"
+  commit_in "$1" "drop broken source"
+}
 
-main_before=$(git -C "$c" rev-parse main)
-vendor_before=$(git -C "$c" rev-parse vendor/whole)
-sync_in "$c" whole >/dev/null
-check "re-running at the same ref adds no commit to main" test "$(git -C "$c" rev-parse main)" = "$main_before"
-check "re-running at the same ref adds no commit to the vendor branch" test "$(git -C "$c" rev-parse vendor/whole)" = "$vendor_before"
+scenario layout
+r=$base/layout/repo
+drop_broken "$r"
+sync_in "$r" --all >/dev/null
+check "main holds every selected item, flat, with renames applied" same "$(tree "$r" main)" "CUSTOMIZATIONS.md
+README.md
+agents/helper.md
+licenses/alpha/LICENSE
+licenses/beta/LICENSE
+skills/b-tdd/SKILL.md
+skills/diag/SKILL.md
+skills/proto/SKILL.md
+skills/tdd/SKILL.md
+sources.json"
+check "a vendor branch holds only its own source's transformed files" same "$(tree "$r" vendor/beta)" "licenses/beta/LICENSE
+skills/b-tdd/SKILL.md
+skills/diag/SKILL.md"
+check "the higher-precedence source keeps the bare name" same "$(cat "$r/skills/tdd/SKILL.md")" "---
+name: tdd
+description: alpha tdd
+---
+alpha tdd body"
+check "a colliding lower-precedence skill is renamed in its frontmatter too" same "$(cat "$r/skills/b-tdd/SKILL.md")" "---
+name: b-tdd
+description: beta tdd
+---
+beta tdd body"
+check "an explicit exclude beats a rename" not test -e "$r/skills/b-proto"
+check "renames are logged in CUSTOMIZATIONS.md" same "$(cat "$r/CUSTOMIZATIONS.md")" "# Customizations
+
+<!-- BEGIN renames (generated by tools/sync; edits here are overwritten) -->
+## Renamed by sync
+- \`b-tdd\`: beta skill \`tdd\`, renamed because alpha has one with that name.
+<!-- END renames -->"
+check "vendor commits record the upstream sha" contains "file://$base/layout/alpha@$(git -C "$base/layout/alpha" rev-parse HEAD)" "$(git -C "$r" log -1 --format=%s vendor/alpha)"
+check "vendor branches are orphans" test -z "$(git -C "$r" log --format=%P -1 vendor/alpha)"
+check "no leftover worktree registrations" test "$(worktrees "$r")" = 1
+
+main_before=$(git -C "$r" rev-parse main)
+vendor_before=$(git -C "$r" rev-parse vendor/alpha)
+printf 'still not selected\n' >"$base/layout/alpha/notes.md"
+commit_in "$base/layout/alpha" "alpha touches an unselected file"
+sync_in "$r" --all >/dev/null
+check "an unchanged transformed tree adds no vendor commit" same "$(git -C "$r" rev-parse vendor/alpha)" "$vendor_before"
+check "an unchanged transformed tree adds no commit to main" same "$(git -C "$r" rev-parse main)" "$main_before"
+
+scenario single
+r=$base/single/repo
+drop_broken "$r"
+sync_in "$r" beta >/dev/null
+check "a single-source sync still renames against every other source" same "$(tree "$r" vendor/beta)" "licenses/beta/LICENSE
+skills/b-tdd/SKILL.md
+skills/diag/SKILL.md"
+check "a single-source sync leaves other vendor branches alone" not git -C "$r" rev-parse --verify --quiet vendor/alpha
 
 scenario evolve
-u=$base/evolve/upstream
-c=$base/evolve/consumer
-sync_in "$c" whole >/dev/null
-printf 'top\nmiddle\nlocally edited bottom\n' >"$c/sources/whole/shared.md"
-printf 'mine\n' >"$c/sources/whole/LOCAL.md"
-commit_in "$c" "local edits"
-printf 'upstream edited top\nmiddle\nbottom\n' >"$u/shared.md"
-rm "$u/doomed.md"
-commit_in "$u" "upstream v2"
-sync_in "$c" whole >/dev/null
-check "local edit survives an upstream update elsewhere in the file" grep -q "locally edited bottom" "$c/sources/whole/shared.md"
-check "upstream change arrives in the same file" grep -q "upstream edited top" "$c/sources/whole/shared.md"
-check "a file deleted upstream disappears locally" not test -e "$c/sources/whole/doomed.md"
-check "a main-only file inside the prefix survives" test -f "$c/sources/whole/LOCAL.md"
-check "no leftover worktree registrations after an update" test "$(worktrees "$c")" = 1
+r=$base/evolve/repo
+b=$base/evolve/beta
+drop_broken "$r"
+sync_in "$r" --all >/dev/null
+skill "$r/skills/diag" diag "beta diag" $'one\ntwo\nmy three\n'
+commit_in "$r" "customize diag"
+skill "$b/skills/eng/diag" diag "beta diag" $'upstream one\ntwo\nthree\n'
+git -C "$b" rm --quiet -r skills/eng/tdd
+commit_in "$b" "beta v2"
+sync_in "$r" beta >/dev/null
+check "a user edit survives an upstream change to the same file" same "$(cat "$r/skills/diag/SKILL.md")" "---
+name: diag
+description: beta diag
+---
+upstream one
+two
+my three"
+check "an upstream deletion flows through to main" not test -e "$r/skills/b-tdd"
+check "a rename that no longer applies leaves the log" same "$(cat "$r/CUSTOMIZATIONS.md")" "# Customizations
+
+<!-- BEGIN renames (generated by tools/sync; edits here are overwritten) -->
+<!-- END renames -->"
 
 scenario conflict
-u=$base/conflict/upstream
-c=$base/conflict/consumer
-sync_in "$c" whole >/dev/null
-printf 'top\nmine\nbottom\n' >"$c/sources/whole/shared.md"
-commit_in "$c" "conflicting local edit"
-printf 'top\ntheirs\nbottom\n' >"$u/shared.md"
-commit_in "$u" "conflicting upstream edit"
-check "overlapping edits exit nonzero" not sync_in "$c" whole
-check "overlapping edits leave a conflicted merge in place" test -f "$c/.git/MERGE_HEAD"
-check "no leftover worktree registrations after a conflict" test "$(worktrees "$c")" = 1
+r=$base/conflict/repo
+b=$base/conflict/beta
+drop_broken "$r"
+sync_in "$r" --all >/dev/null
+skill "$r/skills/diag" diag "beta diag" $'one\nmine\nthree\n'
+commit_in "$r" "customize diag"
+skill "$b/skills/eng/diag" diag "beta diag" $'one\ntheirs\nthree\n'
+commit_in "$b" "beta v2"
+sync_in "$r" beta >/dev/null 2>&1 && status=0 || status=$?
+check "overlapping edits exit with the conflict code 3" test "$status" = 3
+check "overlapping edits leave a conflicted merge in place" test -f "$r/.git/MERGE_HEAD"
+check "no leftover worktree registrations after a conflict" test "$(worktrees "$r")" = 1
 
 scenario missing
-c=$base/missing/consumer
-out=$(sync_in "$c" broken 2>&1) && status=0 || status=$?
-check "a paths entry missing upstream exits nonzero" test "$status" -ne 0
-check "a paths entry missing upstream is named in the error" contains "skills/nope" "$out"
-
-scenario pinned
-u=$base/pinned/upstream
-c=$base/pinned/consumer
-first=$(git -C "$u" rev-parse HEAD)
-printf 'skill a v2\n' >"$u/skills/a/SKILL.md"
-commit_in "$u" "upstream v2"
-sync_in "$c" subset "${first:0:8}" >/dev/null
-check "an abbreviated sha pins the snapshot to that commit" grep -q "skill a v1" "$c/sources/subset/skills/a/SKILL.md"
+r=$base/missing/repo
+out=$(sync_in "$r" alpha 2>&1) && status=0 || status=$?
+check "an include that matches nothing exits 1" test "$status" = 1
+check "an include that matches nothing is named in the error" contains "'skills/nope' matches no skill" "$out"
 
 scenario nomerge
-c=$base/nomerge/consumer
-main_before=$(git -C "$c" rev-parse main)
-sync_in "$c" whole --no-merge >/dev/null
-check "--no-merge advances the vendor branch" git -C "$c" rev-parse --verify vendor/whole
-check "--no-merge leaves the current branch untouched" test "$(git -C "$c" rev-parse main)" = "$main_before"
-check "--no-merge leaves the working tree untouched" not test -e "$c/sources/whole"
-check "no leftover worktree registrations after --no-merge" test "$(worktrees "$c")" = 1
+r=$base/nomerge/repo
+drop_broken "$r"
+main_before=$(git -C "$r" rev-parse main)
+sync_in "$r" alpha --no-merge >/dev/null
+check "--no-merge advances the vendor branch" git -C "$r" rev-parse --verify vendor/alpha
+check "--no-merge leaves the current branch untouched" same "$(git -C "$r" rev-parse main)" "$main_before"
 
 echo "all checks passed"
