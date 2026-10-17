@@ -11,7 +11,7 @@ Each skill lives at `../<name>/SKILL.md` from this file. Pick every skill whose 
 
 - **animate.** Building new web motion.
 - **animate-expo.** Any motion in React Native or Expo: gestures, haptics.
-- **apple-design.** Apple-style fluid UI on the web: springs, gestures, momentum, materials, typography.
+- **apple-design.** Apple-style fluid UI on the web: springs, gestures, materials, typography.
 - **mobile-native.** A web app that must feel installed on a phone: 100vh, input zoom, tap highlights, the notch, PWAs.
 - **prototype.** The user wants several versions of a UI piece to flip between and pick one.
 - **ask-sonner.** Setting up or troubleshooting Sonner toasts.
@@ -27,7 +27,7 @@ Each skill lives at `../<name>/SKILL.md` from this file. Pick every skill whose 
 
 ## Audit (read-only)
 
-- **improve-animations.** Auditing a whole codebase's motion into a prioritized plan.
+- **improve-animations.** Auditing a whole codebase's motion.
 - **find-animation-opportunities.** Finding places that don't animate but should.
 
 ## Reference
