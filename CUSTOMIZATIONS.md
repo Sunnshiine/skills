@@ -5,6 +5,7 @@
 - Finds `poteto-mode` in the skill tree at `~/.agents/skills` instead of searching `~/.cursor/plugins`.
 - Says "subagent spawn" and "general-purpose agent" instead of Cursor `Task` and `generalPurpose`.
 ## poteto-mode
+- Model-invocable: dropped `disable-model-invocation: true`.
 - Authoring-a-skill playbook uses `writing-for-agents` and adds a "ruthlessly prune no-ops" step.
 - Adds the Animation pass playbook (`playbooks/animation-pass.md`): Emil's find-animation-opportunities → animate → review-animations chain.
 
