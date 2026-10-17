@@ -1,6 +1,6 @@
 ---
 name: emil
-description: Routes UI and motion work to the right Emil Kowalski skill. Use when building, animating, or reviewing an interface, or when the user names Emil.
+description: Routes to the right Emil Kowalski skill. Use when building, animating, or reviewing UI, or when the user names Emil.
 ---
 
 Match the task to every skill below it touches, then invoke those skills in order: build before review.
@@ -15,6 +15,6 @@ When one matches, stop and name the command for the user to run.
 
 | Branch | Command |
 | --- | --- |
-| Strict review of animation code, where `emil-design-eng` is the lighter default | `/review-animations` |
+| Strict review of animation code | `/review-animations` |
 | Several UI variants behind a live picker | `/prototype` |
 | Choose a frontend library | `/pick-ui-library` |
