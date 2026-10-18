@@ -18,8 +18,7 @@
       "skills": [
         "cursor-team-kit/skills/deslop",
         "cursor-team-kit/skills/fix-ci",
-        "cursor-team-kit/skills/get-pr-comments",
-        "cursor-team-kit/skills/thermo-nuclear-code-quality-review"
+        "cursor-team-kit/skills/get-pr-comments"
       ],
       "exclude": [],
       "agents": [],

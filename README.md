@@ -9,7 +9,7 @@ The skills and agents I run in Claude Code and Codex, on every machine. Upstream
 | Source | Upstream | Taken |
 | --- | --- | --- |
 | `pstack` | [backnotprop/pstack](https://github.com/backnotprop/pstack) | every skill, plus the `poteto-agent` and `comment-sicko` agents |
-| `cursor-team-kit` | [cursor/plugins](https://github.com/cursor/plugins/tree/main/cursor-team-kit) | `deslop`, `fix-ci`, `get-pr-comments`, `thermo-nuclear-code-quality-review` |
+| `cursor-team-kit` | [cursor/plugins](https://github.com/cursor/plugins/tree/main/cursor-team-kit) | `deslop`, `fix-ci`, `get-pr-comments` |
 | `emil` | [emilkowalski/skills](https://github.com/emilkowalski/skills) | every skill |
 | `humanlayer` | [humanlayer/skills](https://github.com/humanlayer/skills) | `show-me`, `rpi`, and the `rpi` agents |
 | `mattpocock` | [mattpocock/skills](https://github.com/mattpocock/skills) | engineering and productivity skills except `prototype` and `to-questionnaire`, plus `chief-of-staff` |
