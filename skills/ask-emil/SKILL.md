@@ -74,8 +74,8 @@ Run beneath the others. Reach for them when the **words**, not the work, are the
 Off the flow entirely.
 
 - **`/ask-lapse`** — Lapse, the animation inspector: installing it, driving the panel, takes, named moments, diffs, jank reports, the MCP and Playwright integrations. Reach for it when you need to *see* what an animation is doing frame by frame. `/animations` decides what the motion should be; `/ask-lapse` is how you look at what it currently is. They pair: inspect with Lapse, fix with `/animations`.
-- **`/writing-skills`** — write skill files that actually change what an agent does. Reach for it when the user is packaging their own taste, or when a skill they wrote is being ignored.
-- **`/borrow-a-brain`** — turn a person's or company's published work into a skill that answers the way they would: collect the whole corpus, extract sourced claims, cluster them into references, write the skill, test it. Reach for it when the user says "make a skill out of X's essays / talks / blog". `/writing-skills` packages the user's own taste; this one packages someone else's published thinking.
+- **`/emil-writing-skills`** — write skill files that actually change what an agent does. Reach for it when the user is packaging their own taste, or when a skill they wrote is being ignored.
+- **`/borrow-a-brain`** — turn a person's or company's published work into a skill that answers the way they would: collect the whole corpus, extract sourced claims, cluster them into references, write the skill, test it. Reach for it when the user says "make a skill out of X's essays / talks / blog". `/emil-writing-skills` packages the user's own taste; this one packages someone else's published thinking.
 - **`/product-thinking`** — interview the user about a product or feature idea, one question at a time, against twenty principles, and end with a verdict. Reach for it when the user says "should I build this", "grill me on this idea", or asks whether something is worth building. It is about the idea, not the interface; once the idea holds, hand off to the building skills.
 
 ## Overlaps
