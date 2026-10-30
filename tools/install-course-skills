@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Emil's course skills are licensed per user, so they install from his server and never live in this repo.
+SERVICE=aiforui-token
+INSTALLER=@aiforui/install@0.1.4
+
+if ! token=$(security find-generic-password -s "$SERVICE" -w 2>/dev/null); then
+  echo "no $SERVICE in the login keychain; add it with: security add-generic-password -a \"\$USER\" -s $SERVICE -w" >&2
+  exit 1
+fi
+exec npx --yes "$INSTALLER" --token="$token" --global -y "$@"

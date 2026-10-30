@@ -30,6 +30,8 @@ git clone https://github.com/Sunnshiine/skills ~/Projects/skills
 
 `--launchd` adds a LaunchAgent that runs `tools/install --update` every six hours: it pulls this repo and reruns `tools/install`, but only while the clone is on `main`. It logs to `~/Library/Logs/skills-sync.log` with a timestamp on each line.
 
+Emil's course skills are licensed per user, so they are not in this repo. Store your course token in Keychain, then run `tools/install-course-skills`. [Install the course skills on a work computer](docs/work-machine.md) covers the steps.
+
 To move from an older setup (plugins, the skills CLI, or hand-copied skills), run `tools/install --clean` to see what it would remove, then `tools/install --clean --yes` to remove it and install. It removes skills the skills CLI copied in, links that are broken or point into a plugin cache, and anything in the way of a path this repo installs. It keeps your other files, directories, and links, and `~/.claude/skills/synced`, which claude.ai manages.
 
 ## One-time setup for the nightly sync
