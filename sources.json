@@ -54,6 +54,16 @@
       "exclude": ["skills/engineering/prototype", "skills/productivity/to-questionnaire"],
       "agents": [],
       "license": "LICENSE"
+    },
+    {
+      "name": "tstack",
+      "url": "https://github.com/t3dotgg/tstack",
+      "ref": "main",
+      "rename_prefix": "tstack-",
+      "skills": ["skills/council"],
+      "exclude": [],
+      "agents": [],
+      "license": "LICENSE"
     }
   ]
 }
