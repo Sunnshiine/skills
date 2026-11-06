@@ -1,5 +1,10 @@
 # Customizations
 
+## council
+- Seats the latest Claude Opus, Fable, and Sonnet instead of one model from each of three providers.
+- Gives each delegate a different review angle, because one vendor's models can share blind spots.
+- Caps the loop at 3 rounds unless the user asks for more, and stops early when a round returns only nits.
+- Puts the score table under `## Evidence` from the `pr` template instead of its own `## Council review` section.
 ## poteto-agent
 - Claude Code agent frontmatter: dropped Cursor `is_background`.
 - Finds `poteto-mode` in the skill tree at `~/.agents/skills` instead of searching `~/.cursor/plugins`.
