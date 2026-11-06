@@ -13,6 +13,7 @@ The skills and agents I run in Claude Code and Codex, on every machine. Upstream
 | `emil` | [emilkowalski/skills](https://github.com/emilkowalski/skills) | every skill |
 | `humanlayer` | [humanlayer/skills](https://github.com/humanlayer/skills) | `show-me`, `rpi`, and the `rpi` agents |
 | `mattpocock` | [mattpocock/skills](https://github.com/mattpocock/skills) | engineering and productivity skills except `prototype` and `to-questionnaire`, plus `chief-of-staff` |
+| `tstack` | [t3dotgg/tstack](https://github.com/t3dotgg/tstack) | `council` |
 
 When two sources ship a skill with the same name, the earlier source keeps it and the later one is renamed with its prefix, such as `matt-tdd`. Upstream licenses are in `licenses/`.
 
