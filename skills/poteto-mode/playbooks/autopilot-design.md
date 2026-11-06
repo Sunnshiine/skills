@@ -1,4 +1,4 @@
-### Design to release
+### Autopilot-design
 
 Read the **emil** skill first. It says where each skill below lives and when each applies, including the manual-only ones, which you read by path.
 
@@ -22,7 +22,7 @@ Run the passes in order, and meet each pass's criterion before starting the next
 6. **Release prep.** Sweep the whole app, then clean the code and copy that ship with it.
    - Skills: `emil-prep-for-prod`, `emil-unslop-code`, `emil-unslop-writing`
    - Done when a release build succeeds with no demo data, debug UI, or placeholder copy. Stop before publishing.
-7. Run **Opening a PR**.
+7. Run **Opening a PR**, unless a pass owner already opened it under Autopilot-stack.
 
 In any pass:
 
@@ -31,4 +31,10 @@ In any pass:
 - `emil-borrow-a-brain` when the work should follow someone's published thinking.
 - `emil-writing-skills` when a convention from this work should become a skill.
 
-**Reply:** the build, the screenshots, the test results, the skills skipped and why, and the steps that need the user.
+With **Autopilot-stack** (`playbooks/autopilot-stack.md`):
+
+- Each pass is one queue item with one owner, and its PR stacks on the previous pass's PR. Put the pass's skills and criterion in the owner's brief.
+- Owners run one at a time, because each pass builds on the last. Start the next owner once the current PR is verified and green.
+- Run `emil-product-thinking` only if the operator asks before the run, because it interviews the user. Otherwise skip it.
+
+**Reply:** the build, the screenshots, the test results, the skills skipped and why, and the steps that need the user. Under Autopilot-stack, list each pass's PR and verdict too.

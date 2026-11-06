@@ -10,7 +10,7 @@ Skills live in two places:
 
 Skip any that are not installed. Read each chosen skill's SKILL.md in full.
 
-For a whole app or product, run the playbook at `../poteto-mode/playbooks/design-to-release.md`. For a single task, pick every skill whose entry matches it. If two entries both match and you can't choose, or you need their order, read **emil-ask-emil**.
+For a whole app or product, run the playbook at `../poteto-mode/playbooks/autopilot-design.md`. For a single task, pick every skill whose entry matches it. If two entries both match and you can't choose, or you need their order, read **emil-ask-emil**.
 
 ## Foundation
 
