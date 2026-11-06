@@ -147,6 +147,7 @@ A large or cross-cutting effort (a migration across many call sites, an ambitiou
 - **Prototype.** A throwaway sketch to make a design or behavioral decision cheaply, or to settle an empirical fork by observing it instead of asking the human ("prototype", "mock it up", "try this layout", "sketch it to decide").
 - **Visual parity.** Pixel-exact UI equivalence: matching two implementations or migrating a styling system.
 - **Animation pass.** Adding motion to an existing UI ("make this feel alive", "what should animate here").
+- **Design to release.** Building a whole app or product UI from design direction through a release build, using Emil's skills. Use it instead of **figure-it-out** for this work.
 - **Authoring or modifying a skill.** Writing or editing a SKILL.md. File: `playbooks/authoring-a-skill.md`.
 - **Eval.** Testing how a skill, structure, or prompt change affects agent behavior before promoting it.
 - **Babysit.** Driving a PR or a stack to merge-ready: conflicts, review threads, CI.
