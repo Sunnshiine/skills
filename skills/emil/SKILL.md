@@ -22,6 +22,7 @@ For a whole app or product, run the playbook at `../poteto-mode/playbooks/autopi
 
 - **animate.** Building new web motion.
 - **animate-expo.** Any motion in React Native or Expo: gestures, haptics.
+- **gestures.** Web drag, swipe, fling, hold, and sheet interactions that track the finger 1:1 and stay interruptible.
 - **choreograph.** Several elements moving together: staggers, sequences, hero entrances, view swaps.
 - **apple-design.** Apple-style fluid UI: springs, gestures, materials, typography.
 - **emil-surfaces.** Shadows, borders, gradients, elevation, and their dark-mode versions.
