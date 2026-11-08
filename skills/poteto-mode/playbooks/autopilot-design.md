@@ -8,10 +8,10 @@ Run the passes in order, and meet each pass's criterion before starting the next
    - Skills: `emil-product-thinking`, `emil-get-creative`, `emil-prototype`, `emil-design-eng`, `emil-design-foundations`, `emil-typography`, `emil-color`, `emil-surfaces`, `apple-design`, `pick-ui-library`, `emil-design-system-docs`
    - Done when every later screen can take its tokens from `DESIGN.md`, and every text and background color pair passes a contrast check in each theme.
 2. **Vertical slice.** Build one core flow end to end, with real data and persistence.
-   - Skills: `write-swift`, `emil-component-design`, `emil-forms-and-inputs`, `emil-build-a-tool`, `emil-animations`, `animate`, `animate-expo`
+   - Skills: `write-swift`, `emil-component-design`, `emil-forms-and-inputs`, `emil-build-a-tool`, `emil-animations`, `animate`, `animate-expo`, `gestures`
    - Done when the flow works on the target platform and its data survives a restart.
 3. **Full app.** Build every remaining screen, behavior, and empty state.
-   - Skills: `emil-design-foundations`, `emil-marketing-pages`, `emil-mobile-native`, `ask-sonner`, `find-animation-opportunities`, `animate`, `choreograph`
+   - Skills: `emil-design-foundations`, `emil-marketing-pages`, `emil-mobile-native`, `ask-sonner`, `find-animation-opportunities`, `animate`, `choreograph`, `gestures`
    - Done when every required behavior works on the target platform and the data model has passing tests.
 4. **Craft pass.** Apply each skill to every screen and fix every finding.
    - Skills: `emil-ui-polish`, `emil-ui-review`, `emil-unslop-design`, `emil-touch-and-accessibility`, `emil-animations`, `review-animations`, `improve-animations`, `remove-animations`, `emil-ask-lapse`
