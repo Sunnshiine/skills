@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+catchup=$(cd "$(dirname "$0")" && pwd)/catchup
+base=$(mktemp -d)
+trap 'rm -rf "$base"' EXIT
+
+check() {
+  local msg=$1
+  shift
+  if "$@" >/dev/null 2>&1; then
+    echo "ok: $msg"
+  else
+    echo "FAIL: $msg"
+    exit 1
+  fi
+}
+
+same() { [ "$1" = "$2" ] || { printf -- '--- expected\n%s\n--- actual\n%s\n' "$1" "$2" >&2; return 1; }; }
+contains() { case "$2" in *"$1"*) return 0 ;; *) return 1 ;; esac; }
+lacks() { ! contains "$@"; }
+first() { printf '%s\n' "$1" | head -n 1; }
+
+run() {
+  local rc=0
+  out=$(cd "$repo" && "$catchup" "$@" 2>&1) || rc=$?
+  code=$rc
+}
+
+repo=$base/repo
+git init --quiet -b main "$repo"
+git -C "$repo" config user.email catchup@example.com
+git -C "$repo" config user.name "catchup test"
+git -C "$repo" config commit.gpgsign false
+git -C "$repo" config rebase.updateRefs false
+
+g() { git -C "$repo" "$@"; }
+put() { mkdir -p "$(dirname "$repo/$1")"; printf '%b' "$2" >"$repo/$1"; }
+commit_all() { g add -A && g commit --quiet -m "$1"; }
+branch() { g checkout --quiet -b "$1" "${2:-main}"; }
+png() { mkdir -p "$(dirname "$repo/$1")"; printf '\x89PNG\r\n\x1a\n%s\0' "$2" >"$repo/$1"; }
+
+put app.swift 'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n'
+put docs.md 'one\ntwo\nthree\n'
+put config.yml 'a:\n  b: 1\n'
+png Tests/__Snapshots__/Card/day.png v1
+png Tests/__Snapshots__/Card/night.png v1
+commit_all "root"
+root=$(g rev-parse HEAD)
+
+branch clean
+put new.swift 'hello\n'
+commit_all "clean feature"
+
+branch textconflict "$root"
+put docs.md 'one\nTWO from pr\nthree\n'
+commit_all "pr edits docs"
+
+branch snaps "$root"
+png Tests/__Snapshots__/Card/day.png pr
+png Tests/__Snapshots__/Card/night.png pr
+put app.swift 'line1 pr\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n'
+commit_all "pr rerecords"
+
+branch mixed "$root"
+png Tests/__Snapshots__/Card/day.png pr
+put docs.md 'one\ntwo from mixed\nthree\n'
+commit_all "pr touches snapshot and docs"
+
+g checkout --quiet main
+put docs.md 'one\ntwo from trunk\nthree\n'
+png Tests/__Snapshots__/Card/day.png trunk
+png Tests/__Snapshots__/Card/night.png trunk
+put app.swift 'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "trunk moves"
+noscript=$(g rev-parse HEAD)
+put scripts/rerecord-snapshots '#!/bin/sh\n'
+commit_all "trunk adds rerecord script"
+
+run check --base main clean
+check "clean merge decides none" same none "$(first "$out")"
+check "none exits 0" same 0 "$code"
+check "none names base and head" contains "head $(g rev-parse clean)" "$out"
+
+run check --base main textconflict
+check "text conflict decides rebase" same rebase "$(first "$out")"
+check "rebase exits 10" same 10 "$code"
+check "rebase lists the conflicted path" contains "conflict docs.md" "$out"
+
+run check --base main snaps
+check "snapshot-only conflict decides rerecord-snapshots" same rerecord-snapshots "$(first "$out")"
+check "rerecord-snapshots exits 11" same 11 "$code"
+check "lists each snapshot" contains "conflict Tests/__Snapshots__/Card/night.png" "$out"
+check "takes trunk's side by sha" contains "take git checkout $(g rev-parse main) -- Tests/__Snapshots__/Card/day.png" "$out"
+check "names the repo's rerecord script" contains "rerecord scripts/rerecord-snapshots" "$out"
+
+run check --base main mixed
+check "snapshot plus doc conflict decides rebase" same rebase "$(first "$out")"
+check "rebase prints no take line" lacks "take " "$out"
+
+run check --base "$noscript" snaps
+check "without the script, points at the repo's own command" contains "rerecord none" "$out"
+
+run check --base nope clean
+check "an unknown base exits 3" same 3 "$code"
+run check
+check "a missing head exits 2" same 2 "$code"
+run frobnicate
+check "an unknown command exits 2" same 2 "$code"
+
+branch feature "$root"
+put app.swift 'line1\nline2\nline3 feature\nline4\nline5\nline6\nline7\nline8\n'
+commit_all "feature edits app"
+put config.yml 'a:\n  b: 2\n'
+commit_all "feature edits config"
+verdict=$(g rev-parse HEAD)
+
+branch rebased feature
+g rebase --quiet main
+run carry --base main "$verdict" rebased
+check "a clean rebase carries the verdict" same carry "$(first "$out")"
+check "carry exits 0" same 0 "$code"
+check "carry cites range-diff proof" contains "proof patch-id" "$out"
+check "the proof names the range-diff" contains "git range-diff --no-color $root..$verdict $(g rev-parse main)..$(g rev-parse rebased)" "$out"
+check "range-diff shows each commit unchanged" contains "| 1:  $(g rev-parse --short "$verdict~1") = 1:" "$out"
+
+branch reworked rebased
+put config.yml 'a:\n  b: 3\n'
+g commit --quiet --amend -a --no-edit
+run carry --base main "$verdict" reworked
+check "a changed patch decides reverify" same reverify "$(first "$out")"
+check "reverify exits 10" same 10 "$code"
+check "reverify names the changed file" contains "changed config.yml" "$out"
+check "reverify leaves unchanged files out" lacks "changed app.swift" "$out"
+check "reverify cites no proof" lacks "proof " "$out"
+
+branch indented rebased
+put config.yml 'a:\n    b: 2\n'
+g commit --quiet --amend -a --no-edit
+run carry --base main "$verdict" indented
+check "a whitespace-only change still reverifies" same reverify "$(first "$out")"
+
+branch snapfeature "$root"
+png Tests/__Snapshots__/Card/night.png first
+commit_all "first render"
+snapverdict=$(g rev-parse HEAD)
+branch snaprerendered snapfeature
+png Tests/__Snapshots__/Card/night.png second
+g commit --quiet --amend -a --no-edit
+run carry --base "$root" "$snapverdict" snaprerendered
+check "a different binary render reverifies" contains "changed Tests/__Snapshots__/Card/night.png" "$out"
+
+branch stackparent "$root"
+put docs.md 'one\ntwo in parent\nthree\n'
+commit_all "parent"
+oldparent=$(g rev-parse HEAD)
+branch stackchild stackparent
+put new.swift 'child\n'
+commit_all "child"
+childverdict=$(g rev-parse HEAD)
+g checkout --quiet stackparent
+put docs.md 'one\ntwo in parent, reworked\nthree\n'
+g commit --quiet --amend -a --no-edit
+branch restacked stackchild
+g rebase --quiet --onto stackparent "$oldparent"
+run check --base stackparent "$childverdict"
+check "a rewritten parent conflicts with its own old commits" same rebase "$(first "$out")"
+run check --base stackparent --old-base "$oldparent" "$childverdict"
+check "--old-base checks only the child's own patch" same none "$(first "$out")"
+run carry --base stackparent --old-base "$oldparent" "$childverdict" restacked
+check "a restack with --old-base carries" same carry "$(first "$out")"
+
+g checkout --quiet main
+branch a "$root"
+put docs.md 'one\ntwo from a\nthree\n'
+commit_all "a collides with trunk"
+branch b main
+put new.swift 'from b\n'
+commit_all "b"
+branch c main
+put new.swift 'from c\n'
+commit_all "c"
+branch d main
+put other.swift 'd\n'
+commit_all "d"
+run radar --base main a b c d
+check "radar notifies on any collision" same notify "$(first "$out")"
+check "notify exits 10" same 10 "$code"
+check "radar flags the head that conflicts with trunk" contains "rebase a" "$out"
+check "radar lists that head's paths" contains "conflict a docs.md" "$out"
+check "radar flags the pair that collides once both land" contains "pair b c" "$out"
+check "radar lists the pair's paths" contains "pair-conflict b c new.swift" "$out"
+check "radar marks the bystander clean" contains "clean d" "$out"
+check "radar keeps the bystander out of every pair" lacks "pair b d" "$out"
+check "radar skips pairs with a head that already conflicts" lacks "pair a" "$out"
+
+run radar --base main b d
+check "radar with no collisions decides none" same none "$(first "$out")"
+check "quiet radar exits 0" same 0 "$code"
+
+run carry --base main "$root" feature
+check "a verdict with no commits reverifies" same reverify "$(first "$out")"
+check "an empty side prints one range-diff line" contains "range-diff none" "$out"
+check "an empty side prints no range-diff usage" lacks "usage" "$out"
+
+g checkout --quiet main
+branch sp main
+put app.swift 'line1\nline2\nline3\nline4 parent\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "stack parent"
+branch sc sp
+put app.swift 'line1\nline2\nline3\nline4 child\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "stack child re-edits the parent's line"
+branch sx sp
+put app.swift 'line1\nline2\nline3\nline4 sibling x\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "sibling x re-edits the parent's line"
+branch sy sp
+put sy.txt 'y\n'
+commit_all "sibling y edits elsewhere"
+branch sz sp
+put app.swift 'line1\nline2\nline3\nline4 sibling z\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "sibling z re-edits the same line"
+run radar --base main sp sc
+check "radar skips a head paired with its own ancestor" same none "$(first "$out")"
+run radar --base main sx sy
+check "radar compares stacked siblings by their own commits" same none "$(first "$out")"
+run radar --base main sx sz
+check "radar pairs stacked siblings that edit the same lines" contains "pair sx sz" "$out"
+check "the stacked pair lists its path" contains "pair-conflict sx sz app.swift" "$out"
+
+git init --quiet --bare "$base/remote.git"
+g remote add origin "$base/remote.git"
+g push --quiet origin main
+g fetch --quiet origin
+stale=$(g rev-parse origin/main)
+git clone --quiet "$base/remote.git" "$base/other"
+printf 'from trunk\n' >"$base/other/new.swift"
+git -C "$base/other" add -A
+git -C "$base/other" -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit --quiet -m "remote trunk adds new.swift"
+git -C "$base/other" push --quiet origin main
+fresh=$(git -C "$base/other" rev-parse HEAD)
+
+run check --no-fetch clean
+check "--no-fetch reads the stale remote-tracking ref" same none "$(first "$out")"
+check "--no-fetch names the stale base" contains "base $stale" "$out"
+run check clean
+check "the default base is fetched first" same rebase "$(first "$out")"
+check "the output names the fetched base" contains "base $fresh" "$out"
+run radar b d
+check "radar sees trunk that moved on the remote" contains "rebase b" "$out"
+
+g remote set-url origin "$base/missing.git"
+g update-ref refs/remotes/origin/main "$stale"
+run check clean
+check "a failed fetch exits 5" same 5 "$code"
+check "a failed fetch names the stale base" contains "origin/main is $stale" "$out"
+check "a failed fetch names --no-fetch" contains "--no-fetch" "$out"
+
+g update-ref -d refs/remotes/origin/main
+g update-ref refs/remotes/origin/trunk "$stale"
+g symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+run check --no-fetch clean
+check "without origin/main the base falls back to origin/HEAD" contains "base $stale" "$out"
+g symbolic-ref --delete refs/remotes/origin/HEAD
+run check --no-fetch clean
+check "without origin/main or origin/HEAD exits 2" same 2 "$code"
+check "the error names --base" contains "--base" "$out"
+
+echo "all catchup tests passed"
