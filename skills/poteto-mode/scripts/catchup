@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Usage: catchup <command> [--base REV] ...
 
-Decides when a PR head needs a rebase. It reads local refs only, so fetch first.
-Needs git 2.45 or newer.
+Decides when a PR head needs a rebase. Needs git 2.45 or newer.
 
-  catchup check [--base origin/main] [--old-base REV] <head>
+The base defaults to origin/main, or to origin/HEAD's branch when origin/main
+does not exist. When the base is a remote-tracking branch, catchup fetches it
+first and exits 5 if two fetches fail. --no-fetch reads local refs only.
+
+  catchup check [--base origin/main] [--old-base REV] [--no-fetch] <head>
       Merges <head> into the base with git merge-tree.
       none                clean. Do not rebase. Test the merge result at landing.
       rebase              conflicts, one `conflict <path>` line each.
@@ -12,15 +15,17 @@ Needs git 2.45 or newer.
                           Rebase, run each `take` line at every stop, then run the
                           `rerecord` line and commit.
 
-  catchup carry [--base origin/main] [--old-base REV] <verdict-sha> <new-sha>
+  catchup carry [--base origin/main] [--old-base REV] [--no-fetch] <verdict-sha> <new-sha>
       Compares the two patches, each taken from its merge base with the base.
       carry     identical by `git patch-id --stable` and exact +/- lines per file.
                 The verdict carries. Cite the `proof` line.
       reverify  different, one `changed <path>` line each. Scope one verifier to them.
 
-  catchup radar [--base origin/main] <head>...
+  catchup radar [--base origin/main] [--no-fetch] <head>...
       Checks each head against the base, then each pair of heads that merge
-      cleanly with it, as if both landed.
+      cleanly with it, as if both landed. A pair where one head contains the
+      other is skipped. A pair that shares unmerged commits, as in a stack, is
+      merged from its own merge base, so each side brings only its own commits.
       none    no head conflicts with the base or with another head.
       notify  message only the owners named on `rebase`, `rerecord-snapshots`,
               and `pair` lines.
@@ -29,13 +34,14 @@ Needs git 2.45 or newer.
 was rewritten, as in a restack or a parent that squash-merged.
 
 Output: line 1 is the decision word. Each later line is `<key> <value>...`, and a
-path is always the last field.
+path is always the last field. The `base` line names the base SHA used.
 Exit: 0 none or carry, 10 rebase, reverify, or notify, 11 rerecord-snapshots,
-2 usage error, 3 git error.
+2 usage error, 3 git error, 4 internal error, 5 fetch failed.
 """
 
 import argparse
 import hashlib
+import os
 import re
 import shlex
 import subprocess
@@ -48,14 +54,16 @@ DIFF = ["diff", "--no-renames", "--full-index", "--no-ext-diff", "--no-textconv"
         "--src-prefix=a/", "--dst-prefix=b/"]
 
 
-class GitError(Exception):
-    pass
+class Fail(Exception):
+    def __init__(self, message, code=3):
+        super().__init__(message)
+        self.code = code
 
 
 def git(*args, ok=(0,), input=None):
     p = subprocess.run(["git", *args], input=input, capture_output=True)
-    if p.returncode not in ok:
-        raise GitError(f"git {' '.join(args)}: {p.stderr.decode(errors='replace').strip()}")
+    if ok is not None and p.returncode not in ok:
+        raise Fail(f"git {' '.join(args)}: {p.stderr.decode(errors='replace').strip()}")
     return p
 
 
@@ -66,8 +74,34 @@ def out(*args):
 def commit(rev):
     p = git("rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}", ok=(0, 1))
     if p.returncode:
-        raise GitError(f"not a commit: {rev}")
+        raise Fail(f"not a commit: {rev}")
     return p.stdout.decode().strip()
+
+
+def ancestor(a, b):
+    return git("merge-base", "--is-ancestor", a, b, ok=(0, 1)).returncode == 0
+
+
+def resolve_base(name, fetch):
+    if name is None:
+        name = "origin/main"
+        if git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/main", ok=(0, 1)).returncode:
+            name = git("symbolic-ref", "--quiet", "refs/remotes/origin/HEAD", ok=(0, 1)).stdout.decode().strip()
+            if not name:
+                raise Fail("no origin/main and no origin/HEAD, pass --base <trunk ref>", 2)
+    ref = git("rev-parse", "--symbolic-full-name", name, ok=(0, 128)).stdout.decode().strip()
+    remotes = [r for r in out("remote").split() if ref.startswith(f"refs/remotes/{r}/")]
+    if not fetch or not remotes:
+        return name
+    remote = max(remotes, key=len)
+    branch = ref[len(f"refs/remotes/{remote}/"):]
+    for _ in range(2):
+        p = git("fetch", "--quiet", "--no-tags", remote, f"+refs/heads/{branch}:{ref}", ok=None)
+        if p.returncode == 0:
+            return ref
+    stale = git("rev-parse", "--verify", "--quiet", ref, ok=(0, 1)).stdout.decode().strip() or "missing"
+    raise Fail(f"fetch {remote} {branch} failed, {name} is {stale}; pass --no-fetch to use it: "
+               f"{p.stderr.decode(errors='replace').strip()}", 5)
 
 
 def exists(rev, path):
@@ -114,7 +148,7 @@ def file_keys(fork, tip):
     diff = git(*DIFF, fork, tip).stdout
     chunks = [c for c in re.split(rb"(?m)^(?=diff --git )", diff) if c]
     if len(chunks) != len(names):
-        raise GitError(f"diff {fork}..{tip}: {len(names)} paths, {len(chunks)} chunks")
+        raise Fail(f"diff {fork}..{tip}: {len(names)} paths, {len(chunks)} chunks")
     stream = b"".join(b"commit %040x\n" % (i + 1) + c.rstrip(b"\n") + b"\n" for i, c in enumerate(chunks))
     ids = {int(line.split()[1], 16): line.split()[0]
            for line in git("patch-id", "--stable", input=stream).stdout.decode().splitlines()}
@@ -140,12 +174,16 @@ def carry(args):
     decision = "reverify" if changed else "carry"
     old_id, new_id = patch_id(old_fork, old), patch_id(new_fork, new)
     rd = ["range-diff", "--no-color", f"{old_fork}..{old}", f"{new_fork}..{new}"]
-    lines = [decision, f"verdict {old} patch-id {old_id}", f"new {new} patch-id {new_id}"]
+    has_commits = old_fork != old and new_fork != new
+    lines = [decision, f"base {base}", f"verdict {old} patch-id {old_id}", f"new {new} patch-id {new_id}"]
     lines += [f"changed {p}" for p in changed]
     if decision == "carry":
-        lines.append(f"proof patch-id {new_id} unchanged; git {' '.join(rd)}")
-    lines.append(f"range-diff git {' '.join(rd)}")
-    lines += [f"| {l}" for l in out(*rd).splitlines()]
+        lines.append(f"proof patch-id {new_id} unchanged" + (f"; git {' '.join(rd)}" if has_commits else ""))
+    if has_commits:
+        lines.append(f"range-diff git {' '.join(rd)}")
+        lines += [f"| {l}" for l in out(*rd).splitlines()]
+    else:
+        lines.append("range-diff none, a side has no commits over its merge base")
     return decision, lines
 
 
@@ -166,7 +204,13 @@ def radar(args):
     clean = list(trees)
     for i, x in enumerate(clean):
         for y in clean[i + 1:]:
-            _, conflicts = merge(trees[x], trees[y], base=base)
+            a, b = shas[x], shas[y]
+            if ancestor(a, b) or ancestor(b, a):
+                continue
+            if ancestor(out("merge-base", a, b), base):
+                _, conflicts = merge(trees[x], trees[y], base=base)
+            else:
+                _, conflicts = merge(a, b)
             if conflicts:
                 notify = True
                 lines.append(f"pair {x} {y}")
@@ -180,16 +224,16 @@ def parse(argv):
     p.add_argument("-h", "--help", action="store_true")
     sub = p.add_subparsers(dest="cmd")
     c = sub.add_parser("check", add_help=False)
-    c.add_argument("--base", default="origin/main")
-    c.add_argument("--old-base")
-    c.add_argument("head")
     k = sub.add_parser("carry", add_help=False)
-    k.add_argument("--base", default="origin/main")
-    k.add_argument("--old-base")
+    r = sub.add_parser("radar", add_help=False)
+    for s in (c, k, r):
+        s.add_argument("--base")
+        s.add_argument("--no-fetch", action="store_true")
+    for s in (c, k):
+        s.add_argument("--old-base")
+    c.add_argument("head")
     k.add_argument("verdict")
     k.add_argument("new")
-    r = sub.add_parser("radar", add_help=False)
-    r.add_argument("--base", default="origin/main")
     r.add_argument("heads", nargs="+")
     args = p.parse_args(argv)
     if args.help or not args.cmd:
@@ -200,17 +244,19 @@ def parse(argv):
 
 def main(argv):
     args = parse(argv)
+    os.environ["GIT_TERMINAL_PROMPT"] = "0"
     try:
         version = tuple(int(n) for n in out("version").split()[2].split(".")[:2])
         if version < (2, 45):
-            raise GitError(f"needs git 2.45 or newer, found {'.'.join(map(str, version))}")
+            raise Fail(f"needs git 2.45 or newer, found {'.'.join(map(str, version))}")
+        args.base = resolve_base(args.base, not args.no_fetch)
         decision, lines = {"check": check, "carry": carry, "radar": radar}[args.cmd](args)
-    except GitError as e:
+    except Fail as e:
         print(f"catchup: {e}", file=sys.stderr)
-        return 3
+        return e.code
     except Exception as e:
         print(f"catchup: {type(e).__name__}: {e}", file=sys.stderr)
-        return 3
+        return 4
     print("\n".join(lines))
     return EXIT[decision]
 

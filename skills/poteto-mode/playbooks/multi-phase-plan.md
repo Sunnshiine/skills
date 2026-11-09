@@ -58,13 +58,13 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Run the repo's lint and typecheck once before the PR-facing push. Push with hooks on.
 - [ ] Run `/deslop` before each commit and `/no-comments` before review.
 - [ ] Triage every Bugbot and security-reviewer comment per `../references/bugbot-triage.md`.
-- [ ] Rebase only when `pstack/skills/poteto-mode/scripts/catchup check <head>` says `rebase` or `rerecord-snapshots`, or CI fails from a change on trunk.
+- [ ] Rebase only when `~/.claude/skills/poteto-mode/scripts/catchup check <head>` says `rebase` or `rerecord-snapshots`, or CI fails from a change on trunk.
 
 ### Verdict and merge, for every PR
 
 - [ ] A full swarm runs once, at the code-ready head. Another full swarm runs only for new behavior, a redesign, or a large new diff. A rebase whose `catchup carry <verdict-sha> <new-sha>` says `carry` keeps its verdict with no verifier and cites the `proof` line. A rebase that says `reverify` gets a single verifier scoped to the `changed` files, a minor fix gets a single verifier at the new head, and a wording-only change gets none. Run each full swarm per `pstack/skills/swarm/SKILL.md`. One gates lane. The ten live lanes from the PR's **Verify, live** block. The perf lane from its **Verify, perf** block. Two or more audit lanes, each with its own focus, that read the diff and the receipts and distrust the PR body. The root audits the receipts in the merge-ready report before the verdict.
-- [ ] Judge every finding by the execution playbook's blocking rule. The verdict is clean when none blocks. A failure on trunk behavior in a lane marked `Regression lane against trunk.` is recorded against trunk and does not block the PR. A new head gets a fresh verdict, except for results that stay valid under the patch-id rule in `playbooks/shipping.md`.
-- [ ] <The merge or handoff rule from the execution playbook, with the patch-id rule from `playbooks/shipping.md`.>
+- [ ] Judge every finding by the execution playbook's blocking rule. The verdict is clean when none blocks. A failure on trunk behavior in a lane marked `Regression lane against trunk.` is recorded against trunk and does not block the PR. A new head gets a fresh verdict, except for results that stay valid under `catchup carry` per `playbooks/shipping.md` step 3.
+- [ ] <The merge or handoff rule from the execution playbook, with `catchup carry` per `playbooks/shipping.md` step 3.>
 
 ### Boot recipe, for every live lane
 

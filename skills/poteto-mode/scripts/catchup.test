@@ -198,4 +198,71 @@ run radar --base main b d
 check "radar with no collisions decides none" same none "$(first "$out")"
 check "quiet radar exits 0" same 0 "$code"
 
+run carry --base main "$root" feature
+check "a verdict with no commits reverifies" same reverify "$(first "$out")"
+check "an empty side prints one range-diff line" contains "range-diff none" "$out"
+check "an empty side prints no range-diff usage" lacks "usage" "$out"
+
+g checkout --quiet main
+branch sp main
+put app.swift 'line1\nline2\nline3\nline4 parent\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "stack parent"
+branch sc sp
+put app.swift 'line1\nline2\nline3\nline4 child\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "stack child re-edits the parent's line"
+branch sx sp
+put app.swift 'line1\nline2\nline3\nline4 sibling x\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "sibling x re-edits the parent's line"
+branch sy sp
+put sy.txt 'y\n'
+commit_all "sibling y edits elsewhere"
+branch sz sp
+put app.swift 'line1\nline2\nline3\nline4 sibling z\nline5\nline6\nline7\nline8 trunk\n'
+commit_all "sibling z re-edits the same line"
+run radar --base main sp sc
+check "radar skips a head paired with its own ancestor" same none "$(first "$out")"
+run radar --base main sx sy
+check "radar compares stacked siblings by their own commits" same none "$(first "$out")"
+run radar --base main sx sz
+check "radar pairs stacked siblings that edit the same lines" contains "pair sx sz" "$out"
+check "the stacked pair lists its path" contains "pair-conflict sx sz app.swift" "$out"
+
+git init --quiet --bare "$base/remote.git"
+g remote add origin "$base/remote.git"
+g push --quiet origin main
+g fetch --quiet origin
+stale=$(g rev-parse origin/main)
+git clone --quiet "$base/remote.git" "$base/other"
+printf 'from trunk\n' >"$base/other/new.swift"
+git -C "$base/other" add -A
+git -C "$base/other" -c user.email=o@example.com -c user.name=o -c commit.gpgsign=false commit --quiet -m "remote trunk adds new.swift"
+git -C "$base/other" push --quiet origin main
+fresh=$(git -C "$base/other" rev-parse HEAD)
+
+run check --no-fetch clean
+check "--no-fetch reads the stale remote-tracking ref" same none "$(first "$out")"
+check "--no-fetch names the stale base" contains "base $stale" "$out"
+run check clean
+check "the default base is fetched first" same rebase "$(first "$out")"
+check "the output names the fetched base" contains "base $fresh" "$out"
+run radar b d
+check "radar sees trunk that moved on the remote" contains "rebase b" "$out"
+
+g remote set-url origin "$base/missing.git"
+g update-ref refs/remotes/origin/main "$stale"
+run check clean
+check "a failed fetch exits 5" same 5 "$code"
+check "a failed fetch names the stale base" contains "origin/main is $stale" "$out"
+check "a failed fetch names --no-fetch" contains "--no-fetch" "$out"
+
+g update-ref -d refs/remotes/origin/main
+g update-ref refs/remotes/origin/trunk "$stale"
+g symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+run check --no-fetch clean
+check "without origin/main the base falls back to origin/HEAD" contains "base $stale" "$out"
+g symbolic-ref --delete refs/remotes/origin/HEAD
+run check --no-fetch clean
+check "without origin/main or origin/HEAD exits 2" same 2 "$code"
+check "the error names --base" contains "--base" "$out"
+
 echo "all catchup tests passed"
