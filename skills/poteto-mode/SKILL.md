@@ -104,13 +104,14 @@ You own every subagent's work. Review the diff and write your own summary, don't
 
 pstack runs on this machine in T3 Code, Claude Code, or Codex. Read this skill, its playbooks, and the routed skills through these mappings. In T3 (the `mcp__t3-code__*` tools exist), read `references/t3.md` before you spawn a worker, arm a `/loop`, or watch a PR.
 
-- **Subagents.** `Task` means your subagent tool: `Agent` in Claude Code, `spawn_agent` in Codex. Drop parameters your tool doesn't have. Every code-writing worker runs in its own git worktree. Claude Code subagents can't spawn subagents and Codex caps nesting depth, so a worker that must spawn workers of its own runs as a T3 thread. Without T3, the coordinator spawns every worker itself.
+- **Subagents.** `Task` means your subagent tool: `Agent` in Claude Code, `spawn_agent` in Codex. Drop parameters your tool doesn't have. Every code-writing worker runs in its own git worktree. A worker that spawns workers of its own needs a spawn tool. In T3 that worker is a launched thread. In Claude Code, `poteto-agent` and `general-purpose` subagents carry `Agent`. In Codex, confirm the child has `spawn_agent` before you brief it as a coordinator, and otherwise spawn its workers yourself.
 - **`poteto-agent`.** Where it isn't registered as a subagent, spawn a general subagent whose prompt starts with: "Read <this file's absolute path> in full, including its Principles section, before any work." Then give the task.
 - **Model settings.** Claude Code loads `~/.claude/rules/pstack-models.md` automatically. In Codex, read `~/.agents/pstack-models.md` at task start. Set the reasoning level with your subagent tool's effort option (`effort` on Claude Code's `Agent`), and skip what your tool can't set.
 - **Transcripts.** Read only the active workspace's sessions, never other projects'. Claude Code: `~/.claude/projects/<slug>/*.jsonl`, where `<slug>` is the workspace path with every character that isn't a letter or digit turned into "-". Codex: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, keeping files whose first line has `payload.cwd` equal to the workspace path. T3: `t3_thread_read` on the thread.
 - **Skill folders.** Project: `.claude/skills/` (Claude Code), `.agents/skills/` (Codex). User: `~/.claude/skills/`, `~/.codex/skills/`, `~/.agents/skills/`.
 - **Questions.** `AskQuestion` means `AskUserQuestion` in Claude Code. Without it, ask in chat with numbered options.
 - **Control skills.** `control-ui` (browser, Electron, web) and `control-cli` (CLIs, TUIs) name the job of driving the real surface yourself. Drive web and Electron with Playwright or a CDP browser, and CLIs and TUIs with tmux or a PTY.
+- **Routed skills written for Cursor.** Read `Task` as your subagent tool, a cloud agent or VM as a local worktree, `agent-transcripts/` as the Transcripts bullet, and `create-skill` as the **writing-for-agents** skill.
 - **`/loop`.** A heartbeat that re-runs a prompt on an interval. Claude Code has it built in. T3 uses `schedule_task` (see `references/t3.md`). Codex waits between checks with a timed shell command.
 
 ## Writing the reply
