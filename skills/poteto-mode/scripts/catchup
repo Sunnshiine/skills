@@ -12,8 +12,8 @@ first and exits 5 if two fetches fail. --no-fetch reads local refs only.
       none                clean. Do not rebase. Test the merge result at landing.
       rebase              conflicts, one `conflict <path>` line each.
       rerecord-snapshots  every conflict is a snapshot image under __Snapshots__/.
-                          Rebase, run each `take` line at every stop, then run the
-                          `rerecord` line and commit.
+                          Rebase, run each `take` line at every stop, push, run
+                          the `rerecord` line, then commit and push what it prints.
 
   catchup carry [--base origin/main] [--old-base REV] [--no-fetch] <verdict-sha> <new-sha>
       Compares the two patches, each taken from its merge base with the base.
