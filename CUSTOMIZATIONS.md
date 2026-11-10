@@ -33,7 +33,7 @@
 - Drops Cursor cloud agents and VMs everywhere; every worker runs in its own local worktree.
 - Drops `cursor-team-kit` attributions; `deslop` is the local skill, `control-ui`/`control-cli` map to Playwright/CDP and tmux in Harness.
 - Model defaults are `claude-opus-5-5` (hardest: `claude-fable-5-1`); drops the `grok` defaults, `-fast` slugs, and fast-mode rules.
-- Orchestrate keeps state in a worktree `notes.md`, and in T3 hands every unit to an autopilot-full thread; without T3 a sub-coordinator is a subagent with a spawn tool.
+- Orchestrate keeps state in a worktree `notes.md` and covers a chief-of-staff chat: every request goes to an owner (a T3 thread, else a subagent) that runs the routed playbook or named skill.
 - Autopilot-full owners are local worktree workers (T3 launched threads), and trails and agent records live in the root's `notes.md`.
 - Harness maps Cursor terms in routed skills (`swarm`, `show-me-your-work`, `ketchup`) to local equivalents.
 - `references/t3.md` has owners use `watch_pull_request` instead of babysit's `watch-pr` drive under `/loop`.
