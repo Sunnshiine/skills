@@ -42,9 +42,10 @@
 - `/loop 1h` heartbeats become "an hourly `/loop`" mapped per harness.
 - Orchestrate cuts work into small units, runs broad sweeps alone, and never holds a verified PR to batch it.
 - Babysit names the structure fix (one entry per line, `merge=union`) when a conflict lands on an append point.
-- Verifiers (Orchestrate, `references/t3.md`), eval judges, and second opinions run on a Claude model other than the author's, per the `# Providers` line in the pstack settings file.
+- Verifiers (Orchestrate, `references/t3.md`), eval judges, second opinions, and Orchestrate's tool-error retries run on a Claude model other than the author's, per the `# Providers` line in the pstack settings file.
 ## setup-pstack
 - Written rule carries a `# Providers` line: Claude only for every role, Codex reserved for image generation.
+- Step 3(c) says the cross-judge excludes the parent's model, not its family.
 ## show-me-your-work
 - Trail reviewer runs on a Claude model other than the author's, per the `# Providers` line.
 
