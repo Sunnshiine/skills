@@ -2,6 +2,7 @@
 # `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit the subagent `model`). Alias entries in a panel list still count toward its fan-out.
 # Policy: Opus at medium for most roles. Fable at xhigh only for the hardest tasks. Synthesizers, judges, reviewers, and perf at high. Panels keep one Fable seat and one Sonnet seat (both high) for a second perspective.
 # On Claude Code, pass the alias to the Agent tool: claude-opus-5-5 is `opus`, claude-sonnet-5-5 is `sonnet`, claude-fable-5-2 is `fable`. Pass the slug's effort suffix as the Agent `effort`.
+# Providers: Claude only. Codex is a $20 plan reserved for image generation. Every verifier, reviewer, judge, panel seat, and second opinion runs on Claude. Independence comes from a Claude model other than the author's (Opus, Fable, Sonnet) in a fresh context. Use Codex or GPT only for image generation, or when the user asks for another model family.
 # budget: small (medium)
 feature, refactoring: claude-opus-5-5-medium
 bug-fix: claude-opus-5-5-medium
